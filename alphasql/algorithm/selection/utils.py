@@ -40,11 +40,15 @@ def measure_sql_execution_time(db_path: str, sql_query: str, repeat: int = 10) -
         if execution_result.result_type == SQLExecutionResultType.SUCCESS:
             end_time = time.time()
             execution_times.append(end_time - start_time)
-    # remove outliers
+    if not execution_times:
+        return float('inf')
+    if len(execution_times) == 1:
+        return execution_times[0]
+    # Keep equal samples; strict bounds otherwise discard zero-variance timings.
     execution_time_std = np.std(execution_times)
     execution_time_mean = np.mean(execution_times)
-    execution_times = [execution_time for execution_time in execution_times if execution_time > execution_time_mean - 3 * execution_time_std and execution_time < execution_time_mean + 3 * execution_time_std]
-    return np.mean(execution_times)
+    execution_times = [execution_time for execution_time in execution_times if execution_time >= execution_time_mean - 3 * execution_time_std and execution_time <= execution_time_mean + 3 * execution_time_std]
+    return float(np.mean(execution_times)) if execution_times else float(execution_time_mean)
     
 def get_subset_schema_dict(table_schema_dict: Dict[str, "TableSchema"], schema_selection_dict: Dict[str, List[str]]):
     selected_table_names_lower = [selected_table_name.lower() for selected_table_name in schema_selection_dict.keys()]

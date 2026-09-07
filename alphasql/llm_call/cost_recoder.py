@@ -45,5 +45,8 @@ class CostRecorder:
         print(f"Total prompt tokens: {self.total_prompt_tokens}")
         print(f"Total completion tokens: {self.total_completion_tokens}")
         print(f"Total tokens: {self.total_tokens}")
-        print(f"Total cost: {self.total_cost}")
+        if self.model in MODEL_PRICE_PER_1M_TOKENS:
+            print(f"Total cost: {self.total_cost}")
+        else:
+            print('Total cost: unavailable; consult provider billing (tokens recorded above)')
         print("-" * 100)

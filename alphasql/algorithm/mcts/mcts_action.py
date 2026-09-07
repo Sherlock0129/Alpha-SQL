@@ -17,13 +17,14 @@ import copy
 import json
 import re
 import random
+import os
 
 SQL_GENERATION_LLM_KWARGS_TEMPERATURE = 0.8
 SQL_REVISION_LLM_KWARGS_TEMPERATURE = 0.8
-SQL_GENERATION_LLM_KWARGS_N = 5
-SQL_REVISION_LLM_KWARGS_N = 5
+SQL_GENERATION_LLM_KWARGS_N = max(1, int(os.getenv('SQL_GENERATION_SAMPLES', '5')))
+SQL_REVISION_LLM_KWARGS_N = max(1, int(os.getenv('SQL_REVISION_SAMPLES', '5')))
 
-SQL_VALIDATION_MAX_TRIES = 15
+SQL_VALIDATION_MAX_TRIES = max(1, int(os.getenv('SQL_VALIDATION_MAX_TRIES', '15')))
 
 class MCTSAction:
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
@@ -85,7 +86,11 @@ class SchemaSelectionAction(MCTSAction):
         )
         nodes = []
         all_schema_selection_dicts = []
+        attempts = 0
         while len(nodes) < llm_kwargs["n"]:
+            attempts += 1
+            if attempts > SQL_VALIDATION_MAX_TRIES:
+                raise RuntimeError('Schema selection exhausted its retry budget')
             new_llm_kwargs = copy.deepcopy(llm_kwargs)
             new_llm_kwargs["n"] = llm_kwargs["n"] - len(nodes)
             responses = call_openai(prompt, **new_llm_kwargs)
@@ -343,6 +348,9 @@ class SQLGenerationAction(MCTSAction):
         result_groups = defaultdict(list)
         valid_sql_query_tries = 0
         while len(all_sql_queries) < SQL_GENERATION_LLM_KWARGS_N:
+            valid_sql_query_tries += 1
+            if valid_sql_query_tries > SQL_VALIDATION_MAX_TRIES:
+                break
             # prevent infinite loop
             if valid_sql_query_tries >= SQL_VALIDATION_MAX_TRIES and len(all_sql_queries) > 0:
                 break
@@ -362,6 +370,8 @@ class SQLGenerationAction(MCTSAction):
                 else:
                     valid_sql_query_tries += 1
         
+        if not all_sql_queries:
+            raise RuntimeError('SQL generation produced no parseable SQL within its retry budget')
         if len(result_groups) == 0 and len(all_sql_queries) > 0:
             return random.choice(all_sql_queries), 0, False
         else:
@@ -492,6 +502,9 @@ class SQLRevisionAction(MCTSAction):
         result_groups = defaultdict(list)
         valid_sql_query_tries = 0
         while len(all_sql_queries) < SQL_REVISION_LLM_KWARGS_N:
+            valid_sql_query_tries += 1
+            if valid_sql_query_tries > SQL_VALIDATION_MAX_TRIES:
+                break
             # prevent infinite loop
             if valid_sql_query_tries >= SQL_VALIDATION_MAX_TRIES and len(all_sql_queries) > 0:
                 break
@@ -511,6 +524,8 @@ class SQLRevisionAction(MCTSAction):
                 else:
                     valid_sql_query_tries += 1
         
+        if not all_sql_queries:
+            raise RuntimeError('SQL revision produced no parseable SQL within its retry budget')
         if len(result_groups) == 0 and len(all_sql_queries) > 0:
             return random.choice(all_sql_queries), 0, False
         else:

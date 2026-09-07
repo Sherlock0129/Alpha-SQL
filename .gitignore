@@ -5,6 +5,8 @@ results
 .vscode
 temp
 .env*
+!.env.example
+.venv/
 rebuttal_exp
 .history
 project_document

@@ -1,0 +1,17 @@
+tasks_file_path: data/preprocessed/smoke5/dev/tasks.pkl
+subset_file_path: data/bird/smoke5.json
+db_root_dir: data/bird/dev/dev_databases
+n_processes: 1
+max_rollout_steps: 2
+max_depth: 16
+exploration_constant: 1.414
+save_root_dir: results/qwen3-coder-flash/smoke5
+random_seed: 42
+mcts_model_kwargs:
+  model: qwen3-coder-flash
+  n: 1
+  top_p: 0.8
+  max_tokens: 4096
+  temperature: 0.8
+  n_strategy: multiple
+reward_model_kwargs: null

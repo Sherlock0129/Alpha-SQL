@@ -1,4 +1,6 @@
 import json
+import ast
+import os
 import pickle
 import re
 from collections import defaultdict
@@ -23,13 +25,14 @@ from alphasql.llm_call.openai_llm import call_openai
 from alphasql.llm_call.prompt_factory import get_prompt
 from alphasql.runner.task import Task
 
-load_dotenv(override=True)
+from alphasql.llm_call.runtime import configure_environment
+configure_environment()
 
 # Initialize embedding model from environment configuration
 EMBEDDING_MODEL_CALLABLE = get_embedding_model()
 
-COST_RECORDER = CostRecorder(model="gpt-3.5-turbo")
-MODEL_NAME = "gpt-4o-mini"
+MODEL_NAME = os.getenv('PREPROCESS_MODEL', 'qwen3-coder-flash')
+COST_RECORDER = CostRecorder(model=MODEL_NAME)
 TEMPERATURE = 0.2
 
 class Preprocessor:
@@ -110,7 +113,7 @@ class Preprocessor:
         Preprocess the LSH index for all databases.
         """
         with ThreadPoolExecutor(max_workers=self.n_parallel_processes) as executor:
-            executor.map(self.preprocess_lsh_index_for_one_db, self.all_db_ids)
+            list(executor.map(self.preprocess_lsh_index_for_one_db, self.all_db_ids))
         logger.info(f"Preprocessed LSH index for {len(self.all_db_ids)} databases")
     
     def get_keywords_for_task(self, task: Task) -> List[str]:
@@ -123,7 +126,7 @@ class Preprocessor:
         Returns:
             The keywords list for the task.
         """
-        max_retries = 10
+        max_retries = 3
         retry_count = 0
         
         while retry_count < max_retries:
@@ -138,10 +141,14 @@ class Preprocessor:
                 # Use regex to extract content between ```python ``` tags
                 pattern = r"```python\s*\[(.*?)\]\s*```"
                 match = re.search(pattern, raw_keywords_str, re.DOTALL)
+                if not match:
+                    match = re.fullmatch(r'\s*\[(.*)\]\s*', raw_keywords_str, re.DOTALL)
                 
                 if match:
                     raw_keywords_str = f"[{match.group(1)}]"
-                    raw_keywords = eval(raw_keywords_str)
+                    raw_keywords = ast.literal_eval(raw_keywords_str)
+                    if not isinstance(raw_keywords, list) or not all(isinstance(k, str) for k in raw_keywords):
+                        raise ValueError('Expected a list of keyword strings')
                     keywords = []
                     for keyword in raw_keywords:
                         keyword: str

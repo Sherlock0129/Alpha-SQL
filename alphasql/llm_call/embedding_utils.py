@@ -9,8 +9,9 @@ from typing import List
 from dotenv import load_dotenv
 from loguru import logger
 from openai import OpenAI
+from alphasql.llm_call.runtime import configure_environment
 
-load_dotenv(override=True)
+configure_environment()
 
 
 class EmbeddingModel:
@@ -47,7 +48,7 @@ class EmbeddingModel:
             )
 
         # Initialize OpenAI client
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url, timeout=60, max_retries=1)
 
         logger.info(
             f"Initialized EmbeddingModel with model: {self.model}, base_url: {self.base_url}"
@@ -70,10 +71,11 @@ class EmbeddingModel:
 
         try:
             # OpenAI API allows batch embedding
-            response = self.client.embeddings.create(model=self.model, input=texts)
-
-            # Extract embeddings from response
-            embeddings = [data.embedding for data in response.data]
+            embeddings = []
+            batch_size = max(1, int(os.getenv('EMBEDDING_BATCH_SIZE', '10')))
+            for start in range(0, len(texts), batch_size):
+                response = self.client.embeddings.create(model=self.model, input=texts[start:start + batch_size])
+                embeddings.extend(data.embedding for data in sorted(response.data, key=lambda item: item.index))
 
             logger.debug(f"Successfully embedded {len(texts)} documents")
             return embeddings

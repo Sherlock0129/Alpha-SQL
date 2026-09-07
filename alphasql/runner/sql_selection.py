@@ -4,11 +4,14 @@ import pickle
 import glob
 import json
 import argparse
+import os
+from alphasql.llm_call.runtime import configure_environment
 from tqdm import tqdm
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
-EXECUTION_TIME_REPEAT = 20
+configure_environment()
+EXECUTION_TIME_REPEAT = max(1, int(os.getenv('SQL_SELECTION_REPEATS', '20')))
 
 def select_final_sql_query(results_file_path: str, db_root_dir: str):
     question_id = int(results_file_path.split("/")[-1].split(".")[0])

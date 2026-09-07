@@ -15,7 +15,8 @@ from dotenv import load_dotenv
 import os
 import traceback
 
-load_dotenv(override=True)
+from alphasql.llm_call.runtime import configure_environment
+configure_environment()
 
 try:
     import weave
