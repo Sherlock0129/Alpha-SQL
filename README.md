@@ -183,6 +183,27 @@ conda activate alphasql
 
 3. The final `pred_sqls.json` will in the project root dir (defined in `script/sql_selection.sh` OUTPUT_PATH variable)
 
+## Jev constrained candidate pipeline
+
+The Jev path is independent of the OpenAI/Qwen and MCTS runners. TypeSafe System
+One makes typed schema and SQL decisions; Python builds and validates a constrained
+query plan, and Jev then reranks the executable candidates. It never sends
+`jev-latest` to an OpenAI-compatible chat-completions endpoint.
+
+Copy the `TYPESAFE_*` and `JEV_*` values from `.env.example` into `.env.local`, then run:
+
+```bash
+python -m alphasql.runner.jev_candidate_runner \
+  --tasks-file-path ./data/preprocessed/dev.pkl \
+  --database-root-dir ./data/dev_databases \
+  --output-dir ./outputs/jev
+```
+
+Each question produces a JSON file containing schema-link probabilities, serialized
+query plans, canonical SQLite candidates, execution summaries, dimension-level
+rerank scores, and the selected SQL. Without `TYPESAFE_API_KEY`, the runner exits
+before creating an SDK client or sending a network request.
+
 ## 📝 Citation
 If you find our work useful or inspiring, please kindly cite:
 ```bibtex

@@ -1,0 +1,1583 @@
+{
+  "question_id": 4623,
+  "db_id": "disney",
+  "selected_sql": "SELECT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+  "selected_index": 0,
+  "uncertain": true,
+  "timings_ms": {
+    "schema_link": 1097.178,
+    "beam_compile_execute": 22.464,
+    "rerank": 2074.217,
+    "total": 3193.859
+  },
+  "candidate_sqls": [
+    "SELECT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+    "SELECT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+    "SELECT DISTINCT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+    "SELECT DISTINCT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+    "SELECT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\"",
+    "SELECT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\"",
+    "SELECT DISTINCT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\""
+  ],
+  "candidates": [
+    {
+      "canonical_sql": "SELECT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "director"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "characters",
+                "column": "movie_title"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Pinocchio",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.47798783999999994,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.92,
+        "literal": 0.82,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "director"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            "Ben Sharpsteen"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 0,
+        "score": 0.8283333333333333,
+        "dimensions": {
+          "projection": {
+            "value": 0.9425,
+            "confidence": 0.81,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.04,
+              "3": 0.06,
+              "4": 0.87
+            }
+          },
+          "filters": {
+            "value": 0.945,
+            "confidence": 0.81,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.01,
+              "2": 0.04,
+              "3": 0.06,
+              "4": 0.87
+            }
+          },
+          "logic": {
+            "value": 0.895,
+            "confidence": 0.65,
+            "probabilities": {
+              "0": 0.07,
+              "1": 0.01,
+              "2": 0.03,
+              "3": 0.05,
+              "4": 0.84
+            }
+          },
+          "join": {
+            "value": 0.61,
+            "confidence": 0.21999999999999997,
+            "probabilities": {
+              "false": 0.39,
+              "true": 0.61
+            }
+          },
+          "minimality": {
+            "value": 0.67,
+            "confidence": 0.3400000000000001,
+            "probabilities": {
+              "false": 0.32999999999999996,
+              "true": 0.67
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "characters",
+                "column": "movie_title"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Pinocchio",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.34219584,
+      "decision_probabilities": {
+        "projection": 0.63,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.92,
+        "literal": 0.82,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "name"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            "Pinocchio"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 1,
+        "score": 0.43666666666666665,
+        "dimensions": {
+          "projection": {
+            "value": 0.0725,
+            "confidence": 0.76,
+            "probabilities": {
+              "0": 0.84,
+              "1": 0.08,
+              "2": 0.03,
+              "3": 0.02,
+              "4": 0.03
+            }
+          },
+          "filters": {
+            "value": 0.4075,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.3,
+              "1": 0.29,
+              "2": 0.09,
+              "3": 0.14,
+              "4": 0.18
+            }
+          },
+          "logic": {
+            "value": 0.785,
+            "confidence": 0.29,
+            "probabilities": {
+              "0": 0.17,
+              "1": 0.02,
+              "2": 0.03,
+              "3": 0.07,
+              "4": 0.71
+            }
+          },
+          "join": {
+            "value": 0.58,
+            "confidence": 0.15999999999999992,
+            "probabilities": {
+              "false": 0.42000000000000004,
+              "true": 0.58
+            }
+          },
+          "minimality": {
+            "value": 0.24,
+            "confidence": 0.52,
+            "probabilities": {
+              "false": 0.76,
+              "true": 0.24
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "director"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "characters",
+                "column": "movie_title"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Pinocchio",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.18588416000000002,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.92,
+        "literal": 0.82,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "director"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            "Ben Sharpsteen"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 2,
+        "score": 0.8222222222222222,
+        "dimensions": {
+          "projection": {
+            "value": 0.9275,
+            "confidence": 0.76,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.0,
+              "2": 0.03,
+              "3": 0.18,
+              "4": 0.78
+            }
+          },
+          "filters": {
+            "value": 0.9175,
+            "confidence": 0.73,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.01,
+              "2": 0.03,
+              "3": 0.22,
+              "4": 0.73
+            }
+          },
+          "logic": {
+            "value": 0.835,
+            "confidence": 0.45,
+            "probabilities": {
+              "0": 0.04,
+              "1": 0.01,
+              "2": 0.05,
+              "3": 0.36,
+              "4": 0.54
+            }
+          },
+          "join": {
+            "value": 0.71,
+            "confidence": 0.41999999999999993,
+            "probabilities": {
+              "false": 0.29000000000000004,
+              "true": 0.71
+            }
+          },
+          "minimality": {
+            "value": 0.62,
+            "confidence": 0.24,
+            "probabilities": {
+              "false": 0.38,
+              "true": 0.62
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\" WHERE \"characters\".\"movie_title\" = 'Pinocchio'",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "characters",
+                "column": "movie_title"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Pinocchio",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.13307616000000003,
+      "decision_probabilities": {
+        "projection": 0.63,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.92,
+        "literal": 0.82,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "name"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            "Pinocchio"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 3,
+        "score": 0.7622222222222221,
+        "dimensions": {
+          "projection": {
+            "value": 0.8375,
+            "confidence": 0.46,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.01,
+              "2": 0.06,
+              "3": 0.28,
+              "4": 0.6
+            }
+          },
+          "filters": {
+            "value": 0.7525,
+            "confidence": 0.17,
+            "probabilities": {
+              "0": 0.07,
+              "1": 0.06,
+              "2": 0.12,
+              "3": 0.27,
+              "4": 0.48
+            }
+          },
+          "logic": {
+            "value": 0.82,
+            "confidence": 0.4,
+            "probabilities": {
+              "0": 0.07,
+              "1": 0.02,
+              "2": 0.05,
+              "3": 0.31,
+              "4": 0.55
+            }
+          },
+          "join": {
+            "value": 0.74,
+            "confidence": 0.48,
+            "probabilities": {
+              "false": 0.26,
+              "true": 0.74
+            }
+          },
+          "minimality": {
+            "value": 0.56,
+            "confidence": 0.1200000000000001,
+            "probabilities": {
+              "false": 0.43999999999999995,
+              "true": 0.56
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\"",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "director"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.10492416000000004,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.92,
+        "literal": 0.18000000000000005,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "director"
+        ],
+        "row_count": 55,
+        "sample_rows": [
+          [
+            "David Hand"
+          ],
+          [
+            "Ben Sharpsteen"
+          ],
+          [
+            "full credits"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 4,
+        "score": 0.3138888888888889,
+        "dimensions": {
+          "projection": {
+            "value": 0.34,
+            "confidence": 0.48,
+            "probabilities": {
+              "0": 0.13,
+              "1": 0.5,
+              "2": 0.29,
+              "3": 0.04,
+              "4": 0.04
+            }
+          },
+          "filters": {
+            "value": 0.1025,
+            "confidence": 0.66,
+            "probabilities": {
+              "0": 0.67,
+              "1": 0.29,
+              "2": 0.03,
+              "3": 0.0,
+              "4": 0.01
+            }
+          },
+          "logic": {
+            "value": 0.26,
+            "confidence": 0.13,
+            "probabilities": {
+              "0": 0.5700000000000001,
+              "1": 0.16,
+              "2": 0.09,
+              "3": 0.03,
+              "4": 0.15
+            }
+          },
+          "join": {
+            "value": 0.63,
+            "confidence": 0.26,
+            "probabilities": {
+              "false": 0.37,
+              "true": 0.63
+            }
+          },
+          "minimality": {
+            "value": 0.16,
+            "confidence": 0.6799999999999999,
+            "probabilities": {
+              "false": 0.84,
+              "true": 0.16
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"director\".\"name\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\"",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.07511616000000003,
+      "decision_probabilities": {
+        "projection": 0.63,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.92,
+        "literal": 0.18000000000000005,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "name"
+        ],
+        "row_count": 55,
+        "sample_rows": [
+          [
+            "Aladdin"
+          ],
+          [
+            "Alice in Wonderland"
+          ],
+          [
+            "Atlantis: The Lost Empire"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 5,
+        "score": 0.24499999999999997,
+        "dimensions": {
+          "projection": {
+            "value": 0.11,
+            "confidence": 0.63,
+            "probabilities": {
+              "0": 0.64,
+              "1": 0.3,
+              "2": 0.04,
+              "3": 0.01,
+              "4": 0.01
+            }
+          },
+          "filters": {
+            "value": 0.0475,
+            "confidence": 0.84,
+            "probabilities": {
+              "0": 0.85,
+              "1": 0.14,
+              "2": 0.01,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "logic": {
+            "value": 0.27,
+            "confidence": 0.1,
+            "probabilities": {
+              "0": 0.63,
+              "1": 0.12,
+              "2": 0.03,
+              "3": 0.01,
+              "4": 0.21
+            }
+          },
+          "join": {
+            "value": 0.61,
+            "confidence": 0.21999999999999997,
+            "probabilities": {
+              "false": 0.39,
+              "true": 0.61
+            }
+          },
+          "minimality": {
+            "value": 0.13,
+            "confidence": 0.74,
+            "probabilities": {
+              "false": 0.87,
+              "true": 0.13
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"director\".\"director\" FROM \"director\" INNER JOIN \"characters\" ON \"director\".\"name\" = \"characters\".\"movie_title\"",
+      "plan": {
+        "from_table": "director",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "director",
+                "column": "director"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [
+          {
+            "table": "characters",
+            "left": {
+              "table": "director",
+              "column": "name"
+            },
+            "right": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.040803840000000015,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.92,
+        "literal": 0.18000000000000005,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "director"
+        ],
+        "row_count": 29,
+        "sample_rows": [
+          [
+            "David Hand"
+          ],
+          [
+            "Ben Sharpsteen"
+          ],
+          [
+            "full credits"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 6,
+        "score": 0.3461111111111111,
+        "dimensions": {
+          "projection": {
+            "value": 0.2825,
+            "confidence": 0.45,
+            "probabilities": {
+              "0": 0.27,
+              "1": 0.5,
+              "2": 0.13,
+              "3": 0.06,
+              "4": 0.04
+            }
+          },
+          "filters": {
+            "value": 0.0825,
+            "confidence": 0.73,
+            "probabilities": {
+              "0": 0.75,
+              "1": 0.21,
+              "2": 0.02,
+              "3": 0.01,
+              "4": 0.01
+            }
+          },
+          "logic": {
+            "value": 0.3425,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.48,
+              "1": 0.16,
+              "2": 0.07,
+              "3": 0.1,
+              "4": 0.19
+            }
+          },
+          "join": {
+            "value": 0.68,
+            "confidence": 0.3600000000000001,
+            "probabilities": {
+              "false": 0.31999999999999995,
+              "true": 0.68
+            }
+          },
+          "minimality": {
+            "value": 0.34,
+            "confidence": 0.31999999999999995,
+            "probabilities": {
+              "false": 0.6599999999999999,
+              "true": 0.34
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5820,
+          "output_tokens": 585
+        }
+      }
+    }
+  ],
+  "schema_linking": {
+    "tables": [
+      {
+        "table": "characters",
+        "probability": 0.14,
+        "confidence": 0.72,
+        "selected": true
+      },
+      {
+        "table": "director",
+        "probability": 0.95,
+        "confidence": 0.8999999999999999,
+        "selected": true
+      },
+      {
+        "table": "movies_total_gross",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false
+      },
+      {
+        "table": "revenue",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false
+      },
+      {
+        "table": "voice-actors",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false
+      }
+    ],
+    "columns": [
+      {
+        "table": "characters",
+        "column": "movie_title",
+        "probability": 0.9,
+        "confidence": 0.8,
+        "selected": true,
+        "added_by_constraint": true
+      },
+      {
+        "table": "characters",
+        "column": "release_date",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "characters",
+        "column": "hero",
+        "probability": 0.11,
+        "confidence": 0.78,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "characters",
+        "column": "villian",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "characters",
+        "column": "song",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "director",
+        "column": "name",
+        "probability": 0.63,
+        "confidence": 0.26,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "director",
+        "column": "director",
+        "probability": 0.88,
+        "confidence": 0.76,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "movie_title",
+        "probability": 0.52,
+        "confidence": 0.040000000000000036,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "release_date",
+        "probability": 0.07,
+        "confidence": 0.86,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "genre",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "MPAA_rating",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "total_gross",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "movies_total_gross",
+        "column": "inflation_adjusted_gross",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Year",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Studio Entertainment[NI 1]",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Disney Consumer Products[NI 2]",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Disney Interactive[NI 3][Rev 1]",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Walt Disney Parks and Resorts",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Disney Media Networks",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "revenue",
+        "column": "Total",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "voice-actors",
+        "column": "character",
+        "probability": 0.19,
+        "confidence": 0.62,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "voice-actors",
+        "column": "voice-actor",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "voice-actors",
+        "column": "movie",
+        "probability": 0.27,
+        "confidence": 0.45999999999999996,
+        "selected": false,
+        "added_by_constraint": false
+      }
+    ],
+    "join_paths": [
+      {
+        "edges": [],
+        "probability": 0.08,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "director",
+              "column": "name"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.92,
+        "confidence": 0.9,
+        "selected": true
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "movies_total_gross",
+              "column": "movie_title"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "characters",
+              "column": "hero"
+            },
+            "target": {
+              "table": "voice-actors",
+              "column": "character"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "voice-actors",
+              "column": "movie"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "director",
+              "column": "name"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          },
+          {
+            "source": {
+              "table": "movies_total_gross",
+              "column": "movie_title"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "director",
+              "column": "name"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          },
+          {
+            "source": {
+              "table": "characters",
+              "column": "hero"
+            },
+            "target": {
+              "table": "voice-actors",
+              "column": "character"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "director",
+              "column": "name"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          },
+          {
+            "source": {
+              "table": "voice-actors",
+              "column": "movie"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "movies_total_gross",
+              "column": "movie_title"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          },
+          {
+            "source": {
+              "table": "characters",
+              "column": "hero"
+            },
+            "target": {
+              "table": "voice-actors",
+              "column": "character"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "movies_total_gross",
+              "column": "movie_title"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          },
+          {
+            "source": {
+              "table": "voice-actors",
+              "column": "movie"
+            },
+            "target": {
+              "table": "characters",
+              "column": "movie_title"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.9,
+        "selected": false
+      }
+    ],
+    "literals": [
+      {
+        "table": "characters",
+        "column": "movie_title",
+        "value": "Pinocchio",
+        "probability": 0.82,
+        "confidence": 0.6399999999999999,
+        "selected": true
+      },
+      {
+        "table": "characters",
+        "column": "movie_title",
+        "value": "Aladdin",
+        "probability": 0.4,
+        "confidence": 0.19999999999999996,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "movie_title",
+        "value": "Alice in Wonderland",
+        "probability": 0.33,
+        "confidence": 0.33999999999999997,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "movie_title",
+        "value": "Atlantis: The Lost Empire",
+        "probability": 0.43,
+        "confidence": 0.14,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "release_date",
+        "value": "21-Dec-37",
+        "probability": 0.35,
+        "confidence": 0.30000000000000004,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "release_date",
+        "value": "7-Feb-40",
+        "probability": 0.34,
+        "confidence": 0.31999999999999995,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "release_date",
+        "value": "13-Nov-40",
+        "probability": 0.31,
+        "confidence": 0.38,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "hero",
+        "value": "Pinocchio",
+        "probability": 0.27,
+        "confidence": 0.45999999999999996,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "hero",
+        "value": "Snow White",
+        "probability": 0.26,
+        "confidence": 0.48,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "hero",
+        "value": "Dumbo",
+        "probability": 0.35,
+        "confidence": 0.30000000000000004,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "villian",
+        "value": "Evil Queen",
+        "probability": 0.21,
+        "confidence": 0.5800000000000001,
+        "selected": false
+      },
+      {
+        "table": "characters",
+        "column": "villian",
+        "value": "Stromboli",
+        "probability": 0.25,
+        "confidence": 0.5,
+        "selected": false
+      }
+    ],
+    "decisions": {
+      "aggregate": {
+        "choice": "none",
+        "probabilities": {
+          "sum": 0.0,
+          "avg": 0.0,
+          "none": 1.0,
+          "min": 0.0,
+          "max": 0.0,
+          "count": 0.0
+        },
+        "confidence": 1.0
+      },
+      "distinct": {
+        "choice": "no",
+        "probabilities": {
+          "yes": 0.28,
+          "no": 0.72
+        },
+        "confidence": 0.44
+      },
+      "order": {
+        "choice": "none",
+        "probabilities": {
+          "none": 1.0,
+          "desc": 0.0,
+          "asc": 0.0
+        },
+        "confidence": 1.0
+      },
+      "comparison": {
+        "choice": "=",
+        "probabilities": {
+          ">": 0.0,
+          "LIKE": 0.0,
+          "<=": 0.0,
+          "=": 1.0,
+          ">=": 0.0,
+          "<": 0.0,
+          "!=": 0.0
+        },
+        "confidence": 0.99
+      },
+      "date_function": {
+        "choice": "none",
+        "probabilities": {
+          "datetime": 0.0,
+          "julianday": 0.0,
+          "none": 1.0,
+          "strftime": 0.0,
+          "date": 0.0
+        },
+        "confidence": 1.0
+      }
+    },
+    "usage": {
+      "input_tokens": 4941,
+      "output_tokens": 1126
+    }
+  }
+}

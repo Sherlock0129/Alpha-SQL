@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+from contextlib import closing
 from enum import Enum
 from typing import Optional, List, Tuple
 from functools import lru_cache
@@ -63,7 +64,9 @@ class ExecuteSQLThread(threading.Thread):
         
         try:
             # Enforce to read-only mode, to prevent accidental modification of the database
-            with sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True) as conn:
+            # sqlite3.Connection's context manager commits/rolls back but does not
+            # close the handle; closing is important for short-lived validation DBs.
+            with closing(sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True)) as conn:
                 conn.text_factory = lambda x: str(x, 'utf-8', errors='replace')  # Add error handling for UTF-8 decoding
                 conn.set_progress_handler(check_stop, 1000)
                 cursor = conn.cursor()
@@ -109,7 +112,7 @@ def execute_sql_without_timeout(db_path: str, query: str) -> SQLExecutionResult:
         The result of the SQL query.
     """
     try:
-        with sqlite3.connect(f'file:{db_path}?mode=ro', uri=True) as conn:
+        with closing(sqlite3.connect(f'file:{db_path}?mode=ro', uri=True)) as conn:
             conn.text_factory = lambda x: str(x, 'utf-8', errors='replace')  # Add error handling for UTF-8 decoding
             cursor = conn.cursor()
             cursor.execute(query)

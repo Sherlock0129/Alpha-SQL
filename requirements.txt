@@ -10,3 +10,4 @@ tqdm
 pyyaml
 weave
 sqlglot[rs]
+typesafe-sdk

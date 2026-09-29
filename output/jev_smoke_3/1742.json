@@ -1,0 +1,1482 @@
+{
+  "question_id": 1742,
+  "db_id": "restaurant",
+  "selected_sql": "SELECT COUNT(\"geographic\".\"city\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+  "selected_index": 4,
+  "uncertain": true,
+  "timings_ms": {
+    "schema_link": 1036.156,
+    "beam_compile_execute": 48.157,
+    "rerank": 780.859,
+    "total": 1865.172
+  },
+  "candidate_sqls": [
+    "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+    "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+    "SELECT COUNT(\"geographic\".\"region\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+    "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\"",
+    "SELECT COUNT(\"geographic\".\"city\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+    "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\"",
+    "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\" INNER JOIN \"generalinfo\" ON \"generalinfo\".\"city\" = \"geographic\".\"city\" WHERE \"geographic\".\"region\" = 'bay area'",
+    "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\" INNER JOIN \"generalinfo\" ON \"generalinfo\".\"city\" = \"geographic\".\"city\" WHERE \"geographic\".\"region\" = 'bay area'"
+  ],
+  "candidates": [
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.764632143,
+      "decision_probabilities": {
+        "projection": 0.93,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.95,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"region\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            122
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 0,
+        "score": 0.49999999999999994,
+        "dimensions": {
+          "projection": {
+            "value": 0.35,
+            "confidence": 0.24,
+            "probabilities": {
+              "0": 0.25,
+              "1": 0.33,
+              "2": 0.24,
+              "3": 0.12,
+              "4": 0.06
+            }
+          },
+          "filters": {
+            "value": 0.61,
+            "confidence": 0.29,
+            "probabilities": {
+              "0": 0.02,
+              "1": 0.16,
+              "2": 0.39,
+              "3": 0.22,
+              "4": 0.21
+            }
+          },
+          "logic": {
+            "value": 0.475,
+            "confidence": 0.19,
+            "probabilities": {
+              "0": 0.19,
+              "1": 0.16,
+              "2": 0.29,
+              "3": 0.28,
+              "4": 0.08
+            }
+          },
+          "join": {
+            "value": 0.69,
+            "confidence": 0.3799999999999999,
+            "probabilities": {
+              "false": 0.31000000000000005,
+              "true": 0.69
+            }
+          },
+          "minimality": {
+            "value": 0.25,
+            "confidence": 0.5,
+            "probabilities": {
+              "false": 0.75,
+              "true": 0.25
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "city"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.550864017,
+      "decision_probabilities": {
+        "projection": 0.67,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.95,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"city\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            122
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 1,
+        "score": 0.7649999999999999,
+        "dimensions": {
+          "projection": {
+            "value": 0.765,
+            "confidence": 0.5,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.03,
+              "2": 0.18,
+              "3": 0.45,
+              "4": 0.33
+            }
+          },
+          "filters": {
+            "value": 0.845,
+            "confidence": 0.48,
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.01,
+              "2": 0.13,
+              "3": 0.31,
+              "4": 0.55
+            }
+          },
+          "logic": {
+            "value": 0.7175,
+            "confidence": 0.45,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.05,
+              "2": 0.22,
+              "3": 0.44,
+              "4": 0.26
+            }
+          },
+          "join": {
+            "value": 0.71,
+            "confidence": 0.41999999999999993,
+            "probabilities": {
+              "false": 0.29000000000000004,
+              "true": 0.71
+            }
+          },
+          "minimality": {
+            "value": 0.81,
+            "confidence": 0.6200000000000001,
+            "probabilities": {
+              "false": 0.18999999999999995,
+              "true": 0.81
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT COUNT(\"geographic\".\"region\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.057552957000000016,
+      "decision_probabilities": {
+        "projection": 0.93,
+        "aggregate": 0.99,
+        "distinct": 0.07,
+        "join": 0.95,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"region\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            122
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 2,
+        "score": 0.616111111111111,
+        "dimensions": {
+          "projection": {
+            "value": 0.505,
+            "confidence": 0.1,
+            "probabilities": {
+              "0": 0.16,
+              "1": 0.2,
+              "2": 0.26,
+              "3": 0.2,
+              "4": 0.18
+            }
+          },
+          "filters": {
+            "value": 0.6975,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.12,
+              "2": 0.29,
+              "3": 0.23,
+              "4": 0.35
+            }
+          },
+          "logic": {
+            "value": 0.67,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.07,
+              "1": 0.1,
+              "2": 0.25,
+              "3": 0.24,
+              "4": 0.34
+            }
+          },
+          "join": {
+            "value": 0.63,
+            "confidence": 0.26,
+            "probabilities": {
+              "false": 0.37,
+              "true": 0.63
+            }
+          },
+          "minimality": {
+            "value": 0.54,
+            "confidence": 0.08000000000000007,
+            "probabilities": {
+              "false": 0.45999999999999996,
+              "true": 0.54
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\"",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.04880630700000004,
+      "decision_probabilities": {
+        "projection": 0.93,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.95,
+        "literal": 0.06000000000000005,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"region\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            168
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 3,
+        "score": 0.3211111111111111,
+        "dimensions": {
+          "projection": {
+            "value": 0.1675,
+            "confidence": 0.44,
+            "probabilities": {
+              "0": 0.58,
+              "1": 0.27,
+              "2": 0.08,
+              "3": 0.03,
+              "4": 0.04
+            }
+          },
+          "filters": {
+            "value": 0.0925,
+            "confidence": 0.69,
+            "probabilities": {
+              "0": 0.76,
+              "1": 0.16,
+              "2": 0.04,
+              "3": 0.02,
+              "4": 0.02
+            }
+          },
+          "logic": {
+            "value": 0.3,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.46,
+              "1": 0.22,
+              "2": 0.1,
+              "3": 0.09,
+              "4": 0.13
+            }
+          },
+          "join": {
+            "value": 0.66,
+            "confidence": 0.32000000000000006,
+            "probabilities": {
+              "false": 0.33999999999999997,
+              "true": 0.66
+            }
+          },
+          "minimality": {
+            "value": 0.45,
+            "confidence": 0.09999999999999998,
+            "probabilities": {
+              "false": 0.55,
+              "true": 0.45
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT COUNT(\"geographic\".\"city\") FROM \"geographic\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "city"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.041462883,
+      "decision_probabilities": {
+        "projection": 0.67,
+        "aggregate": 0.99,
+        "distinct": 0.07,
+        "join": 0.95,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"city\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            122
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 4,
+        "score": 0.8494444444444443,
+        "dimensions": {
+          "projection": {
+            "value": 0.905,
+            "confidence": 0.69,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.01,
+              "2": 0.1,
+              "3": 0.11,
+              "4": 0.77
+            }
+          },
+          "filters": {
+            "value": 0.9125,
+            "confidence": 0.71,
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.01,
+              "2": 0.11,
+              "3": 0.1,
+              "4": 0.78
+            }
+          },
+          "logic": {
+            "value": 0.875,
+            "confidence": 0.58,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.02,
+              "2": 0.13,
+              "3": 0.13,
+              "4": 0.71
+            }
+          },
+          "join": {
+            "value": 0.69,
+            "confidence": 0.3799999999999999,
+            "probabilities": {
+              "false": 0.31000000000000005,
+              "true": 0.69
+            }
+          },
+          "minimality": {
+            "value": 0.88,
+            "confidence": 0.76,
+            "probabilities": {
+              "false": 0.12,
+              "true": 0.88
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\"",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "city"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.03516153300000002,
+      "decision_probabilities": {
+        "projection": 0.67,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.95,
+        "literal": 0.06000000000000005,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"city\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            168
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 5,
+        "score": 0.20833333333333334,
+        "dimensions": {
+          "projection": {
+            "value": 0.155,
+            "confidence": 0.48,
+            "probabilities": {
+              "0": 0.5,
+              "1": 0.43,
+              "2": 0.05,
+              "3": 0.01,
+              "4": 0.01
+            }
+          },
+          "filters": {
+            "value": 0.0525,
+            "confidence": 0.82,
+            "probabilities": {
+              "0": 0.83,
+              "1": 0.15,
+              "2": 0.01,
+              "3": 0.0,
+              "4": 0.01
+            }
+          },
+          "logic": {
+            "value": 0.245,
+            "confidence": 0.19,
+            "probabilities": {
+              "0": 0.51,
+              "1": 0.22,
+              "2": 0.14,
+              "3": 0.07,
+              "4": 0.06
+            }
+          },
+          "join": {
+            "value": 0.39,
+            "confidence": 0.21999999999999997,
+            "probabilities": {
+              "false": 0.61,
+              "true": 0.39
+            }
+          },
+          "minimality": {
+            "value": 0.19,
+            "confidence": 0.62,
+            "probabilities": {
+              "false": 0.81,
+              "true": 0.19
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"region\") FROM \"geographic\" INNER JOIN \"generalinfo\" ON \"generalinfo\".\"city\" = \"geographic\".\"city\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [
+          {
+            "table": "generalinfo",
+            "left": {
+              "table": "generalinfo",
+              "column": "city"
+            },
+            "right": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.0241462782,
+      "decision_probabilities": {
+        "projection": 0.93,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.03,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"region\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            9226
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 6,
+        "score": 0.3555555555555555,
+        "dimensions": {
+          "projection": {
+            "value": 0.25,
+            "confidence": 0.16,
+            "probabilities": {
+              "0": 0.4,
+              "1": 0.34,
+              "2": 0.16,
+              "3": 0.06,
+              "4": 0.04
+            }
+          },
+          "filters": {
+            "value": 0.5,
+            "confidence": 0.29,
+            "probabilities": {
+              "0": 0.05,
+              "1": 0.32,
+              "2": 0.33,
+              "3": 0.18,
+              "4": 0.12
+            }
+          },
+          "logic": {
+            "value": 0.29,
+            "confidence": 0.03,
+            "probabilities": {
+              "0": 0.38,
+              "1": 0.28,
+              "2": 0.2,
+              "3": 0.09,
+              "4": 0.05
+            }
+          },
+          "join": {
+            "value": 0.52,
+            "confidence": 0.040000000000000036,
+            "probabilities": {
+              "false": 0.48,
+              "true": 0.52
+            }
+          },
+          "minimality": {
+            "value": 0.08,
+            "confidence": 0.84,
+            "probabilities": {
+              "false": 0.92,
+              "true": 0.08
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT COUNT(\"geographic\".\"city\") FROM \"geographic\" INNER JOIN \"generalinfo\" ON \"generalinfo\".\"city\" = \"geographic\".\"city\" WHERE \"geographic\".\"region\" = 'bay area'",
+      "plan": {
+        "from_table": "geographic",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "geographic",
+                "column": "city"
+              },
+              "aggregate": "count",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [
+          {
+            "table": "generalinfo",
+            "left": {
+              "table": "generalinfo",
+              "column": "city"
+            },
+            "right": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "geographic",
+                "column": "region"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "bay area",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.017395705799999994,
+      "decision_probabilities": {
+        "projection": 0.67,
+        "aggregate": 0.99,
+        "distinct": 0.93,
+        "join": 0.03,
+        "literal": 0.94,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 1.0
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "COUNT(\"geographic\".\"city\")"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            9226
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": false,
+      "rerank": {
+        "candidate_index": 7,
+        "score": 0.4633333333333333,
+        "dimensions": {
+          "projection": {
+            "value": 0.445,
+            "confidence": 0.14,
+            "probabilities": {
+              "0": 0.18,
+              "1": 0.26,
+              "2": 0.29,
+              "3": 0.14,
+              "4": 0.13
+            }
+          },
+          "filters": {
+            "value": 0.6325,
+            "confidence": 0.25,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.13,
+              "2": 0.33,
+              "3": 0.3,
+              "4": 0.21
+            }
+          },
+          "logic": {
+            "value": 0.4425,
+            "confidence": 0.16,
+            "probabilities": {
+              "0": 0.2,
+              "1": 0.22,
+              "2": 0.29,
+              "3": 0.19,
+              "4": 0.1
+            }
+          },
+          "join": {
+            "value": 0.52,
+            "confidence": 0.040000000000000036,
+            "probabilities": {
+              "false": 0.48,
+              "true": 0.52
+            }
+          },
+          "minimality": {
+            "value": 0.09,
+            "confidence": 0.8200000000000001,
+            "probabilities": {
+              "false": 0.91,
+              "true": 0.09
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 6318,
+          "output_tokens": 668
+        }
+      }
+    }
+  ],
+  "schema_linking": {
+    "tables": [
+      {
+        "table": "geographic",
+        "probability": 0.96,
+        "confidence": 0.9199999999999999,
+        "selected": true
+      },
+      {
+        "table": "generalinfo",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      },
+      {
+        "table": "location",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      }
+    ],
+    "columns": [
+      {
+        "table": "geographic",
+        "column": "city",
+        "probability": 0.67,
+        "confidence": 0.3400000000000001,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "geographic",
+        "column": "county",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "geographic",
+        "column": "region",
+        "probability": 0.93,
+        "confidence": 0.8600000000000001,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "id_restaurant",
+        "probability": 0.11,
+        "confidence": 0.78,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "label",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "food_type",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "city",
+        "probability": 0.51,
+        "confidence": 0.020000000000000018,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "review",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "location",
+        "column": "id_restaurant",
+        "probability": 0.15,
+        "confidence": 0.7,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "location",
+        "column": "street_num",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "location",
+        "column": "street_name",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "location",
+        "column": "city",
+        "probability": 0.35,
+        "confidence": 0.30000000000000004,
+        "selected": false,
+        "added_by_constraint": false
+      }
+    ],
+    "join_paths": [
+      {
+        "edges": [],
+        "probability": 0.95,
+        "confidence": 0.93,
+        "selected": true
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "generalinfo",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "probability": 0.03,
+        "confidence": 0.93,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "location",
+              "column": "id_restaurant"
+            },
+            "target": {
+              "table": "generalinfo",
+              "column": "id_restaurant"
+            }
+          },
+          {
+            "source": {
+              "table": "location",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "probability": 0.02,
+        "confidence": 0.93,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "location",
+              "column": "id_restaurant"
+            },
+            "target": {
+              "table": "generalinfo",
+              "column": "id_restaurant"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.93,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "generalinfo",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          },
+          {
+            "source": {
+              "table": "location",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.93,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "location",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.93,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "generalinfo",
+              "column": "city"
+            },
+            "target": {
+              "table": "geographic",
+              "column": "city"
+            }
+          },
+          {
+            "source": {
+              "table": "location",
+              "column": "id_restaurant"
+            },
+            "target": {
+              "table": "generalinfo",
+              "column": "id_restaurant"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.93,
+        "selected": false
+      }
+    ],
+    "literals": [
+      {
+        "table": "geographic",
+        "column": "city",
+        "value": "alameda",
+        "probability": 0.22,
+        "confidence": 0.56,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "city",
+        "value": "alamo",
+        "probability": 0.15,
+        "confidence": 0.7,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "city",
+        "value": "albany",
+        "probability": 0.2,
+        "confidence": 0.6,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "county",
+        "value": "alameda county",
+        "probability": 0.22,
+        "confidence": 0.56,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "county",
+        "value": "contra costa county",
+        "probability": 0.24,
+        "confidence": 0.52,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "county",
+        "value": "santa clara county",
+        "probability": 0.21,
+        "confidence": 0.5800000000000001,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "region",
+        "value": "bay area",
+        "probability": 0.94,
+        "confidence": 0.8799999999999999,
+        "selected": true
+      },
+      {
+        "table": "geographic",
+        "column": "region",
+        "value": "napa valley",
+        "probability": 0.22,
+        "confidence": 0.56,
+        "selected": false
+      },
+      {
+        "table": "geographic",
+        "column": "region",
+        "value": "unknown",
+        "probability": 0.18,
+        "confidence": 0.64,
+        "selected": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "id_restaurant",
+        "value": 1,
+        "probability": 0.12,
+        "confidence": 0.76,
+        "selected": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "id_restaurant",
+        "value": 2,
+        "probability": 0.17,
+        "confidence": 0.6599999999999999,
+        "selected": false
+      },
+      {
+        "table": "generalinfo",
+        "column": "id_restaurant",
+        "value": 3,
+        "probability": 0.15,
+        "confidence": 0.7,
+        "selected": false
+      }
+    ],
+    "decisions": {
+      "aggregate": {
+        "choice": "count",
+        "probabilities": {
+          "none": 0.01,
+          "count": 0.99,
+          "sum": 0.0,
+          "avg": 0.0,
+          "max": 0.0,
+          "min": 0.0
+        },
+        "confidence": 0.98
+      },
+      "distinct": {
+        "choice": "yes",
+        "probabilities": {
+          "yes": 0.93,
+          "no": 0.07
+        },
+        "confidence": 0.85
+      },
+      "order": {
+        "choice": "none",
+        "probabilities": {
+          "desc": 0.0,
+          "none": 1.0,
+          "asc": 0.0
+        },
+        "confidence": 1.0
+      },
+      "comparison": {
+        "choice": "=",
+        "probabilities": {
+          ">=": 0.0,
+          "<=": 0.0,
+          "!=": 0.0,
+          ">": 0.0,
+          "=": 1.0,
+          "LIKE": 0.0,
+          "<": 0.0
+        },
+        "confidence": 1.0
+      },
+      "date_function": {
+        "choice": "none",
+        "probabilities": {
+          "date": 0.0,
+          "strftime": 0.0,
+          "datetime": 0.0,
+          "none": 1.0,
+          "julianday": 0.0
+        },
+        "confidence": 1.0
+      }
+    },
+    "usage": {
+      "input_tokens": 2961,
+      "output_tokens": 842
+    }
+  }
+}

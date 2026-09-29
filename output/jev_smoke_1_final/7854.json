@@ -1,0 +1,1493 @@
+{
+  "question_id": 7854,
+  "db_id": "world",
+  "selected_sql": "SELECT DISTINCT \"Country\".\"Name\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+  "selected_index": 0,
+  "uncertain": false,
+  "timings_ms": {
+    "schema_link": 950.474,
+    "beam_compile_execute": 26.105,
+    "rerank": 956.845,
+    "total": 1933.424
+  },
+  "candidate_sqls": [
+    "SELECT DISTINCT \"Country\".\"Name\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+    "SELECT DISTINCT \"Country\".\"Continent\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+    "SELECT \"Country\".\"Name\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+    "SELECT \"Country\".\"Continent\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+    "SELECT DISTINCT \"Country\".\"Name\" FROM \"Country\"",
+    "SELECT DISTINCT \"Country\".\"Continent\" FROM \"Country\"",
+    "SELECT \"Country\".\"Name\" FROM \"Country\"",
+    "SELECT \"Country\".\"Continent\" FROM \"Country\""
+  ],
+  "candidates": [
+    {
+      "canonical_sql": "SELECT DISTINCT \"Country\".\"Name\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Asia",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.596645676,
+      "decision_probabilities": {
+        "projection": 0.89,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.99,
+        "literal": 0.95,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Name"
+        ],
+        "row_count": 51,
+        "sample_rows": [
+          [
+            "Afghanistan"
+          ],
+          [
+            "United Arab Emirates"
+          ],
+          [
+            "Armenia"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 0,
+        "score": 0.9122222222222222,
+        "dimensions": {
+          "projection": {
+            "value": 0.96,
+            "confidence": 0.87,
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.0,
+              "2": 0.02,
+              "3": 0.1,
+              "4": 0.88
+            }
+          },
+          "filters": {
+            "value": 0.975,
+            "confidence": 0.92,
+            "probabilities": {
+              "0": 0.0,
+              "1": 0.0,
+              "2": 0.02,
+              "3": 0.05,
+              "4": 0.93
+            }
+          },
+          "logic": {
+            "value": 0.905,
+            "confidence": 0.68,
+            "probabilities": {
+              "0": 0.03,
+              "1": 0.01,
+              "2": 0.06,
+              "3": 0.11,
+              "4": 0.79
+            }
+          },
+          "join": {
+            "value": 0.82,
+            "confidence": 0.6399999999999999,
+            "probabilities": {
+              "false": 0.18000000000000005,
+              "true": 0.82
+            }
+          },
+          "minimality": {
+            "value": 0.89,
+            "confidence": 0.78,
+            "probabilities": {
+              "false": 0.10999999999999999,
+              "true": 0.89
+            }
+          }
+        },
+        "uncertain": false,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"Country\".\"Continent\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Asia",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.589941792,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.99,
+        "literal": 0.95,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Continent"
+        ],
+        "row_count": 1,
+        "sample_rows": [
+          [
+            "Asia"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 1,
+        "score": 0.3827777777777778,
+        "dimensions": {
+          "projection": {
+            "value": 0.0275,
+            "confidence": 0.91,
+            "probabilities": {
+              "0": 0.91,
+              "1": 0.09,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "filters": {
+            "value": 0.375,
+            "confidence": 0.23,
+            "probabilities": {
+              "0": 0.21,
+              "1": 0.47,
+              "2": 0.08,
+              "3": 0.08,
+              "4": 0.16
+            }
+          },
+          "logic": {
+            "value": 0.41,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.49,
+              "1": 0.07,
+              "2": 0.08,
+              "3": 0.04,
+              "4": 0.32
+            }
+          },
+          "join": {
+            "value": 0.76,
+            "confidence": 0.52,
+            "probabilities": {
+              "false": 0.24,
+              "true": 0.76
+            }
+          },
+          "minimality": {
+            "value": 0.3,
+            "confidence": 0.4,
+            "probabilities": {
+              "false": 0.7,
+              "true": 0.3
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"Country\".\"Name\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Asia",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.23202887400000005,
+      "decision_probabilities": {
+        "projection": 0.89,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.99,
+        "literal": 0.95,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Name"
+        ],
+        "row_count": 51,
+        "sample_rows": [
+          [
+            "Afghanistan"
+          ],
+          [
+            "United Arab Emirates"
+          ],
+          [
+            "Armenia"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 2,
+        "score": 0.8416666666666667,
+        "dimensions": {
+          "projection": {
+            "value": 0.8525,
+            "confidence": 0.51,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.0,
+              "2": 0.15,
+              "3": 0.24,
+              "4": 0.6
+            }
+          },
+          "filters": {
+            "value": 0.935,
+            "confidence": 0.78,
+            "probabilities": {
+              "0": 0.01,
+              "1": 0.0,
+              "2": 0.07,
+              "3": 0.09,
+              "4": 0.83
+            }
+          },
+          "logic": {
+            "value": 0.79,
+            "confidence": 0.3,
+            "probabilities": {
+              "0": 0.09,
+              "1": 0.02,
+              "2": 0.14,
+              "3": 0.13,
+              "4": 0.62
+            }
+          },
+          "join": {
+            "value": 0.79,
+            "confidence": 0.5800000000000001,
+            "probabilities": {
+              "false": 0.20999999999999996,
+              "true": 0.79
+            }
+          },
+          "minimality": {
+            "value": 0.84,
+            "confidence": 0.6799999999999999,
+            "probabilities": {
+              "false": 0.16000000000000003,
+              "true": 0.84
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": true,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"Country\".\"Continent\" FROM \"Country\" WHERE \"Country\".\"Continent\" = 'Asia'",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [
+          {
+            "left": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "operator": "=",
+            "value": "Asia",
+            "right_column": null
+          }
+        ],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.22942180800000003,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.99,
+        "literal": 0.95,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Continent"
+        ],
+        "row_count": 51,
+        "sample_rows": [
+          [
+            "Asia"
+          ],
+          [
+            "Asia"
+          ],
+          [
+            "Asia"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 3,
+        "score": 0.5272222222222223,
+        "dimensions": {
+          "projection": {
+            "value": 0.05,
+            "confidence": 0.83,
+            "probabilities": {
+              "0": 0.86,
+              "1": 0.11,
+              "2": 0.01,
+              "3": 0.01,
+              "4": 0.01
+            }
+          },
+          "filters": {
+            "value": 0.6725,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.14,
+              "1": 0.2,
+              "2": 0.04,
+              "3": 0.04,
+              "4": 0.58
+            }
+          },
+          "logic": {
+            "value": 0.6,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.31,
+              "1": 0.04,
+              "2": 0.07,
+              "3": 0.07,
+              "4": 0.51
+            }
+          },
+          "join": {
+            "value": 0.77,
+            "confidence": 0.54,
+            "probabilities": {
+              "false": 0.22999999999999998,
+              "true": 0.77
+            }
+          },
+          "minimality": {
+            "value": 0.56,
+            "confidence": 0.1200000000000001,
+            "probabilities": {
+              "false": 0.43999999999999995,
+              "true": 0.56
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"Country\".\"Name\" FROM \"Country\"",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.03140240400000003,
+      "decision_probabilities": {
+        "projection": 0.89,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.99,
+        "literal": 0.050000000000000044,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Name"
+        ],
+        "row_count": 239,
+        "sample_rows": [
+          [
+            "Aruba"
+          ],
+          [
+            "Afghanistan"
+          ],
+          [
+            "Angola"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 4,
+        "score": 0.3772222222222222,
+        "dimensions": {
+          "projection": {
+            "value": 0.2875,
+            "confidence": 0.68,
+            "probabilities": {
+              "0": 0.12,
+              "1": 0.6799999999999999,
+              "2": 0.14,
+              "3": 0.04,
+              "4": 0.02
+            }
+          },
+          "filters": {
+            "value": 0.0625,
+            "confidence": 0.79,
+            "probabilities": {
+              "0": 0.78,
+              "1": 0.21,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.01
+            }
+          },
+          "logic": {
+            "value": 0.5225,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.35,
+              "1": 0.06,
+              "2": 0.12,
+              "3": 0.08,
+              "4": 0.39
+            }
+          },
+          "join": {
+            "value": 0.65,
+            "confidence": 0.30000000000000004,
+            "probabilities": {
+              "false": 0.35,
+              "true": 0.65
+            }
+          },
+          "minimality": {
+            "value": 0.35,
+            "confidence": 0.30000000000000004,
+            "probabilities": {
+              "false": 0.65,
+              "true": 0.35
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT DISTINCT \"Country\".\"Continent\" FROM \"Country\"",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": true,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.031049568000000024,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.72,
+        "join": 0.99,
+        "literal": 0.050000000000000044,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Continent"
+        ],
+        "row_count": 7,
+        "sample_rows": [
+          [
+            "North America"
+          ],
+          [
+            "Asia"
+          ],
+          [
+            "Africa"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 5,
+        "score": 0.2588888888888889,
+        "dimensions": {
+          "projection": {
+            "value": 0.0175,
+            "confidence": 0.94,
+            "probabilities": {
+              "0": 0.95,
+              "1": 0.05,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "filters": {
+            "value": 0.0425,
+            "confidence": 0.86,
+            "probabilities": {
+              "0": 0.86,
+              "1": 0.13,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.01
+            }
+          },
+          "logic": {
+            "value": 0.245,
+            "confidence": 0.19,
+            "probabilities": {
+              "0": 0.68,
+              "1": 0.07,
+              "2": 0.03,
+              "3": 0.02,
+              "4": 0.19
+            }
+          },
+          "join": {
+            "value": 0.63,
+            "confidence": 0.26,
+            "probabilities": {
+              "false": 0.37,
+              "true": 0.63
+            }
+          },
+          "minimality": {
+            "value": 0.46,
+            "confidence": 0.07999999999999996,
+            "probabilities": {
+              "false": 0.54,
+              "true": 0.46
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"Country\".\"Name\" FROM \"Country\"",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Name"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.012212046000000016,
+      "decision_probabilities": {
+        "projection": 0.89,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.99,
+        "literal": 0.050000000000000044,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Name"
+        ],
+        "row_count": 239,
+        "sample_rows": [
+          [
+            "Aruba"
+          ],
+          [
+            "Afghanistan"
+          ],
+          [
+            "Angola"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 6,
+        "score": 0.3561111111111111,
+        "dimensions": {
+          "projection": {
+            "value": 0.2675,
+            "confidence": 0.71,
+            "probabilities": {
+              "0": 0.14,
+              "1": 0.71,
+              "2": 0.11,
+              "3": 0.02,
+              "4": 0.02
+            }
+          },
+          "filters": {
+            "value": 0.06,
+            "confidence": 0.8,
+            "probabilities": {
+              "0": 0.78,
+              "1": 0.21,
+              "2": 0.01,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "logic": {
+            "value": 0.495,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.42,
+              "1": 0.05,
+              "2": 0.08,
+              "3": 0.02,
+              "4": 0.43
+            }
+          },
+          "join": {
+            "value": 0.57,
+            "confidence": 0.1399999999999999,
+            "probabilities": {
+              "false": 0.43000000000000005,
+              "true": 0.57
+            }
+          },
+          "minimality": {
+            "value": 0.42,
+            "confidence": 0.16000000000000003,
+            "probabilities": {
+              "false": 0.5800000000000001,
+              "true": 0.42
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    },
+    {
+      "canonical_sql": "SELECT \"Country\".\"Continent\" FROM \"Country\"",
+      "plan": {
+        "from_table": "Country",
+        "select": [
+          {
+            "expression": {
+              "column": {
+                "table": "Country",
+                "column": "Continent"
+              },
+              "aggregate": "none",
+              "date_function": null,
+              "date_format": null,
+              "date_modifiers": []
+            },
+            "alias": null
+          }
+        ],
+        "distinct": false,
+        "joins": [],
+        "where": [],
+        "group_by": [],
+        "having": [],
+        "order_by": [],
+        "limit": null
+      },
+      "beam_probability": 0.012074832000000013,
+      "decision_probabilities": {
+        "projection": 0.88,
+        "aggregate": 1.0,
+        "distinct": 0.28,
+        "join": 0.99,
+        "literal": 0.050000000000000044,
+        "comparison": 1.0,
+        "date_function": 1.0,
+        "order": 0.99
+      },
+      "execution": {
+        "valid": true,
+        "status": "success",
+        "columns": [
+          "Continent"
+        ],
+        "row_count": 239,
+        "sample_rows": [
+          [
+            "North America"
+          ],
+          [
+            "Asia"
+          ],
+          [
+            "Africa"
+          ]
+        ],
+        "error": null
+      },
+      "beam_uncertain": true,
+      "rerank": {
+        "candidate_index": 7,
+        "score": 0.235,
+        "dimensions": {
+          "projection": {
+            "value": 0.015,
+            "confidence": 0.95,
+            "probabilities": {
+              "0": 0.95,
+              "1": 0.05,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "filters": {
+            "value": 0.0275,
+            "confidence": 0.9,
+            "probabilities": {
+              "0": 0.91,
+              "1": 0.09,
+              "2": 0.0,
+              "3": 0.0,
+              "4": 0.0
+            }
+          },
+          "logic": {
+            "value": 0.36,
+            "confidence": 0.0,
+            "probabilities": {
+              "0": 0.61,
+              "1": 0.02,
+              "2": 0.02,
+              "3": 0.01,
+              "4": 0.34
+            }
+          },
+          "join": {
+            "value": 0.55,
+            "confidence": 0.10000000000000009,
+            "probabilities": {
+              "false": 0.44999999999999996,
+              "true": 0.55
+            }
+          },
+          "minimality": {
+            "value": 0.21,
+            "confidence": 0.5800000000000001,
+            "probabilities": {
+              "false": 0.79,
+              "true": 0.21
+            }
+          }
+        },
+        "uncertain": true,
+        "above_threshold": false,
+        "usage": {
+          "input_tokens": 5958,
+          "output_tokens": 668
+        }
+      }
+    }
+  ],
+  "schema_linking": {
+    "tables": [
+      {
+        "table": "City",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      },
+      {
+        "table": "Country",
+        "probability": 0.96,
+        "confidence": 0.9199999999999999,
+        "selected": true
+      },
+      {
+        "table": "CountryLanguage",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false
+      }
+    ],
+    "columns": [
+      {
+        "table": "City",
+        "column": "ID",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "City",
+        "column": "Name",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "City",
+        "column": "CountryCode",
+        "probability": 0.35,
+        "confidence": 0.30000000000000004,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "City",
+        "column": "District",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "City",
+        "column": "Population",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Code",
+        "probability": 0.43,
+        "confidence": 0.14,
+        "selected": true,
+        "added_by_constraint": true
+      },
+      {
+        "table": "Country",
+        "column": "Name",
+        "probability": 0.89,
+        "confidence": 0.78,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Continent",
+        "probability": 0.88,
+        "confidence": 0.76,
+        "selected": true,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Region",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "SurfaceArea",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "IndepYear",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Population",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "LifeExpectancy",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "GNP",
+        "probability": 0.04,
+        "confidence": 0.92,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "GNPOld",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "LocalName",
+        "probability": 0.12,
+        "confidence": 0.76,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "GovernmentForm",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "HeadOfState",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Capital",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "Country",
+        "column": "Code2",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "CountryLanguage",
+        "column": "CountryCode",
+        "probability": 0.27,
+        "confidence": 0.45999999999999996,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "CountryLanguage",
+        "column": "Language",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "CountryLanguage",
+        "column": "IsOfficial",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      },
+      {
+        "table": "CountryLanguage",
+        "column": "Percentage",
+        "probability": 0.03,
+        "confidence": 0.94,
+        "selected": false,
+        "added_by_constraint": false
+      }
+    ],
+    "join_paths": [
+      {
+        "edges": [],
+        "probability": 0.99,
+        "confidence": 0.99,
+        "selected": true
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "City",
+              "column": "CountryCode"
+            },
+            "target": {
+              "table": "Country",
+              "column": "Code"
+            }
+          }
+        ],
+        "probability": 0.01,
+        "confidence": 0.99,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "City",
+              "column": "CountryCode"
+            },
+            "target": {
+              "table": "Country",
+              "column": "Code"
+            }
+          },
+          {
+            "source": {
+              "table": "CountryLanguage",
+              "column": "CountryCode"
+            },
+            "target": {
+              "table": "Country",
+              "column": "Code"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.99,
+        "selected": false
+      },
+      {
+        "edges": [
+          {
+            "source": {
+              "table": "CountryLanguage",
+              "column": "CountryCode"
+            },
+            "target": {
+              "table": "Country",
+              "column": "Code"
+            }
+          }
+        ],
+        "probability": 0.0,
+        "confidence": 0.99,
+        "selected": false
+      }
+    ],
+    "literals": [
+      {
+        "table": "Country",
+        "column": "Continent",
+        "value": "Asia",
+        "probability": 0.95,
+        "confidence": 0.8999999999999999,
+        "selected": true
+      },
+      {
+        "table": "City",
+        "column": "ID",
+        "value": 1,
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "ID",
+        "value": 2,
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "ID",
+        "value": 3,
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "Name",
+        "value": "Kabul",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "Name",
+        "value": "Qandahar",
+        "probability": 0.07,
+        "confidence": 0.86,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "Name",
+        "value": "Herat",
+        "probability": 0.06,
+        "confidence": 0.88,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "CountryCode",
+        "value": "AFG",
+        "probability": 0.15,
+        "confidence": 0.7,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "CountryCode",
+        "value": "NLD",
+        "probability": 0.14,
+        "confidence": 0.72,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "CountryCode",
+        "value": "ANT",
+        "probability": 0.14,
+        "confidence": 0.72,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "District",
+        "value": "Kabol",
+        "probability": 0.09,
+        "confidence": 0.8200000000000001,
+        "selected": false
+      },
+      {
+        "table": "City",
+        "column": "District",
+        "value": "Qandahar",
+        "probability": 0.05,
+        "confidence": 0.9,
+        "selected": false
+      }
+    ],
+    "decisions": {
+      "aggregate": {
+        "choice": "none",
+        "probabilities": {
+          "sum": 0.0,
+          "max": 0.0,
+          "min": 0.0,
+          "avg": 0.0,
+          "count": 0.0,
+          "none": 1.0
+        },
+        "confidence": 1.0
+      },
+      "distinct": {
+        "choice": "yes",
+        "probabilities": {
+          "no": 0.28,
+          "yes": 0.72
+        },
+        "confidence": 0.45
+      },
+      "order": {
+        "choice": "none",
+        "probabilities": {
+          "desc": 0.0,
+          "asc": 0.01,
+          "none": 0.99
+        },
+        "confidence": 0.99
+      },
+      "comparison": {
+        "choice": "=",
+        "probabilities": {
+          ">=": 0.0,
+          "!=": 0.0,
+          ">": 0.0,
+          "=": 1.0,
+          "<": 0.0,
+          "LIKE": 0.0,
+          "<=": 0.0
+        },
+        "confidence": 1.0
+      },
+      "date_function": {
+        "choice": "none",
+        "probabilities": {
+          "datetime": 0.0,
+          "date": 0.0,
+          "strftime": 0.0,
+          "none": 1.0,
+          "julianday": 0.0
+        },
+        "confidence": 1.0
+      }
+    },
+    "usage": {
+      "input_tokens": 4470,
+      "output_tokens": 1060
+    }
+  }
+}
