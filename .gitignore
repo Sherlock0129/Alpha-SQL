@@ -10,3 +10,6 @@ temp
 rebuttal_exp
 .history
 project_document
+# Temporary files generated at the project root
+/tmp/
+

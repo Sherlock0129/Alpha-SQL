@@ -26,6 +26,24 @@ SQL_REVISION_LLM_KWARGS_N = max(1, int(os.getenv('SQL_REVISION_SAMPLES', '5')))
 
 SQL_VALIDATION_MAX_TRIES = max(1, int(os.getenv('SQL_VALIDATION_MAX_TRIES', '15')))
 
+
+def extract_sql_from_response(response: str) -> Optional[str]:
+    """Accept tagged, fenced, or bare SQL while keeping structured output first."""
+    patterns = (
+        r"<sql>\s*(.*?)\s*</sql>",
+        r"```sql\s*(.*?)\s*```",
+        r"<FINAL_ANSWER>\s*(.*?)\s*</FINAL_ANSWER>",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, response or "", flags=re.DOTALL | re.IGNORECASE)
+        if match:
+            return normalize_sql(match.group(1).strip())
+    match = re.search(r"\b(?:WITH|SELECT)\b.*", response or "", flags=re.DOTALL | re.IGNORECASE)
+    if match:
+        sql = re.split(r"\n\s*(?:Explanation|Reasoning|Note)\s*:", match.group(0), maxsplit=1)[0]
+        return normalize_sql(sql.strip().rstrip("`"))
+    return None
+
 class MCTSAction:
     def create_children_nodes(self, node: "MCTSNode", llm_kwargs: Dict[str, Any]) -> List["MCTSNode"]:
         raise NotImplementedError()
@@ -324,23 +342,24 @@ class SQLGenerationAction(MCTSAction):
             template_args={"QUESTION": question, "HINT": hint, "SCHEMA_CONTEXT": schema_context}
         )
         
-        child_node = copy.deepcopy(node)
-        child_node.node_type = MCTSNodeType.SQL_GENERATION
-        child_node.parent_node = node
-        child_node.parent_action = self
-        child_node.depth = node.depth + 1
-        child_node.children = []
-        child_node.path_nodes = node.path_nodes + [child_node]
-        sql_query = None
         db_path = Path(node.db_root_dir) / node.db_id / f"{node.db_id}.sqlite"
-        while not sql_query:
-            sql_query, consistency_score, is_valid_sql_query = self.generate_most_consistent_sql_query(prompt, llm_kwargs, db_path)
-        child_node.sql_query = sql_query
-        child_node.consistency_score = consistency_score
-        child_node.is_valid_sql_query = is_valid_sql_query
-        return [child_node]
+        candidates = self.generate_sql_query_candidates(prompt, llm_kwargs, db_path)
+        nodes = []
+        for sql_query, consistency_score, is_valid_sql_query in candidates:
+            child_node = copy.deepcopy(node)
+            child_node.node_type = MCTSNodeType.SQL_GENERATION
+            child_node.parent_node = node
+            child_node.parent_action = self
+            child_node.depth = node.depth + 1
+            child_node.children = []
+            child_node.path_nodes = node.path_nodes + [child_node]
+            child_node.sql_query = sql_query
+            child_node.consistency_score = consistency_score
+            child_node.is_valid_sql_query = is_valid_sql_query
+            nodes.append(child_node)
+        return nodes
 
-    def generate_most_consistent_sql_query(self, prompt: str, llm_kwargs: Dict[str, Any], db_path: str) -> Optional[str]:
+    def generate_sql_query_candidates(self, prompt: str, llm_kwargs: Dict[str, Any], db_path: str):
         # new_llm_kwargs = copy.deepcopy(llm_kwargs)
         # new_llm_kwargs["temperature"] = SQL_GENERATION_LLM_KWARGS_TEMPERATURE
         # new_llm_kwargs["n"] = SQL_GENERATION_LLM_KWARGS_N
@@ -372,18 +391,18 @@ class SQLGenerationAction(MCTSAction):
         
         if not all_sql_queries:
             raise RuntimeError('SQL generation produced no parseable SQL within its retry budget')
-        if len(result_groups) == 0 and len(all_sql_queries) > 0:
-            return random.choice(all_sql_queries), 0, False
-        else:
-            most_consistent_sql_query = None
-            max_group_size = 0
-            all_sql_queries_size = 0
-            for result, sql_queries in result_groups.items():
-                all_sql_queries_size += len(sql_queries)
-                if len(sql_queries) > max_group_size:
-                    most_consistent_sql_query = random.choice(sql_queries)
-                    max_group_size = len(sql_queries)
-            return most_consistent_sql_query, max_group_size / all_sql_queries_size, True
+        all_sql_queries_size = sum(len(group) for group in result_groups.values())
+        scored = {}
+        for sql_query in all_sql_queries:
+            score = 0.0
+            valid = False
+            for group in result_groups.values():
+                if sql_query in group:
+                    score = len(group) / all_sql_queries_size
+                    valid = True
+                    break
+            scored.setdefault(sql_query, (sql_query, score, valid))
+        return sorted(scored.values(), key=lambda item: item[1], reverse=True)
 
     # def extract_sql_query_answer(self, sql_generation_response: str) -> str:
     #     try:
@@ -392,12 +411,7 @@ class SQLGenerationAction(MCTSAction):
     #         return None
     
     def extract_sql_query_answer(self, sql_generation_response: str) -> str:
-        try:
-            sql_query = re.search(r"<sql>(.*)</sql>", sql_generation_response, flags=re.DOTALL).group(1).strip()
-            return normalize_sql(sql_query)
-        except Exception as e:
-            print(f"Error parsing sql generation response: {e}")
-            return None
+        return extract_sql_from_response(sql_generation_response)
 
 class SQLRevisionAction(MCTSAction):
     """
@@ -478,23 +492,24 @@ class SQLRevisionAction(MCTSAction):
             template_args={"QUESTION": question, "HINT": hint, "SCHEMA_CONTEXT": schema_context}
         )
         
-        child_node = copy.deepcopy(node)
-        child_node.node_type = MCTSNodeType.SQL_REVISION
-        child_node.parent_node = node
-        child_node.parent_action = self
-        child_node.depth = node.depth + 1
-        child_node.children = []
-        child_node.path_nodes = node.path_nodes + [child_node]
-        sql_query = None
         db_path = Path(node.db_root_dir) / node.db_id / f"{node.db_id}.sqlite"
-        while not sql_query:
-            sql_query, consistency_score, is_valid_sql_query = self.generate_most_consistent_sql_query(prompt, llm_kwargs, db_path)
-        child_node.revised_sql_query = sql_query
-        child_node.consistency_score = consistency_score
-        child_node.is_valid_sql_query = is_valid_sql_query
-        return [child_node]
+        candidates = self.generate_sql_query_candidates(prompt, llm_kwargs, db_path)
+        nodes = []
+        for sql_query, consistency_score, is_valid_sql_query in candidates:
+            child_node = copy.deepcopy(node)
+            child_node.node_type = MCTSNodeType.SQL_REVISION
+            child_node.parent_node = node
+            child_node.parent_action = self
+            child_node.depth = node.depth + 1
+            child_node.children = []
+            child_node.path_nodes = node.path_nodes + [child_node]
+            child_node.revised_sql_query = sql_query
+            child_node.consistency_score = consistency_score
+            child_node.is_valid_sql_query = is_valid_sql_query
+            nodes.append(child_node)
+        return nodes
     
-    def generate_most_consistent_sql_query(self, prompt: str, llm_kwargs: Dict[str, Any], db_path: str) -> Optional[str]:
+    def generate_sql_query_candidates(self, prompt: str, llm_kwargs: Dict[str, Any], db_path: str):
         # new_llm_kwargs = copy.deepcopy(llm_kwargs)
         # new_llm_kwargs["temperature"] = SQL_REVISION_LLM_KWARGS_TEMPERATURE
         # new_llm_kwargs["n"] = SQL_REVISION_LLM_KWARGS_N
@@ -526,18 +541,18 @@ class SQLRevisionAction(MCTSAction):
         
         if not all_sql_queries:
             raise RuntimeError('SQL revision produced no parseable SQL within its retry budget')
-        if len(result_groups) == 0 and len(all_sql_queries) > 0:
-            return random.choice(all_sql_queries), 0, False
-        else:
-            most_consistent_sql_query = None
-            max_group_size = 0
-            all_sql_queries_size = 0
-            for result, sql_queries in result_groups.items():
-                all_sql_queries_size += len(sql_queries)
-                if len(sql_queries) > max_group_size:
-                    most_consistent_sql_query = random.choice(sql_queries)
-                    max_group_size = len(sql_queries)
-            return most_consistent_sql_query, max_group_size / all_sql_queries_size, True
+        all_sql_queries_size = sum(len(group) for group in result_groups.values())
+        scored = {}
+        for sql_query in all_sql_queries:
+            score = 0.0
+            valid = False
+            for group in result_groups.values():
+                if sql_query in group:
+                    score = len(group) / all_sql_queries_size
+                    valid = True
+                    break
+            scored.setdefault(sql_query, (sql_query, score, valid))
+        return sorted(scored.values(), key=lambda item: item[1], reverse=True)
     
     # def extract_sql_query_answer(self, sql_revision_response: str) -> str:
     #     try:
@@ -546,12 +561,7 @@ class SQLRevisionAction(MCTSAction):
     #         return None
 
     def extract_sql_query_answer(self, sql_revision_response: str) -> str:
-        try:
-            sql_query = re.search(r"<sql>(.*)</sql>", sql_revision_response, flags=re.DOTALL).group(1).strip()
-            return normalize_sql(sql_query)
-        except Exception as e:
-            print(f"Error parsing sql revision response: {e}")
-            return None
+        return extract_sql_from_response(sql_revision_response)
 
 class EndAction(MCTSAction):
     """

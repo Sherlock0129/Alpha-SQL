@@ -1,0 +1,1268 @@
+                                                    Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+                                                        Boyan Li 1 Jiayi Zhang 1 Ju Fan 2 Yanwei Xu 3 Chong Chen 3 Nan Tang 1 Yuyu Luo 1
+
+
+                                                                   Abstract                                   and enabling both lay and expert users to derive insights ef-
+                                                                                                              fectively (Liu et al., 2024; Luo et al., 2018a;b; 2022b; 2021;
+                                                Text-to-SQL, which enables natural language                   2022a; 2025; Liu et al., 2025b; Luo et al., 2023). With the
+                                                interaction with databases, serves as a pivotal               advancement of large language models (LLMs), methods
+arXiv:2502.17248v2 [cs.DB] 15 Jun 2025
+
+
+
+
+                                                method across diverse industries. With new, more              like CHASE-SQL (Pourreza et al., 2025) have achieved
+                                                powerful large language models (LLMs) emerg-                  competitive results on benchmarks such as BIRD (Li et al.,
+                                                ing every few months, fine-tuning has become                  2023c). Generally, these LLM-based Text-to-SQL meth-
+                                                incredibly costly, labor-intensive, and error-prone.          ods fall into two categories: trained methods and zero-shot
+                                                As an alternative, zero-shot Text-to-SQL, which               methods.
+                                                leverages the growing knowledge and reason-
+                                                ing capabilities encoded in LLMs without task-                Training LLMs for Text-to-SQL. Pre-training or fine-
+                                                specific fine-tuning, presents a promising and                tuning LLMs on task-specific datasets is a common ap-
+                                                more challenging direction. To address this chal-             proach to improving Text-to-SQL performance (Li et al.,
+                                                lenge, we propose Alpha-SQL, a novel approach                 2024b; Gao et al., 2024b; Talaei et al., 2024; Li et al., 2024a;
+                                                that leverages a Monte Carlo Tree Search (MCTS)               Zhu et al., 2025). While effective, this method requires
+                                                framework to iteratively infer SQL construction               extensive labeled datasets and significant computational re-
+                                                actions based on partial reasoning states. To                 sources for model training (Lin et al., 2025). Moreover, as
+                                                enhance the framework’s reasoning capabilities,               newer and more powerful LLMs emerge, the training pro-
+                                                we introduce LLM-as-Action-Model to dynami-                   cess must be repeated to maintain competitive performance,
+                                                cally generate SQL construction actions during                further increasing the cost and effort (Wu et al., 2025).
+                                                the MCTS process, steering the search toward                  Zero-Shot LLMs for Text-to-SQL. As an alternative, zero-
+                                                more promising SQL queries. Moreover, Alpha-                  shot Text-to-SQL methods, such as DAIL-SQL (Gao et al.,
+                                                SQL employs a self-supervised reward function                 2024a) and C3 (Dong et al., 2023), leverage the general
+                                                to evaluate the quality of candidate SQL queries,             knowledge encoded in LLMs to generate SQL queries with-
+                                                ensuring more accurate and efficient query gener-             out requiring task-specific fine-tuning, which eliminates the
+                                                ation. Experimental results show that Alpha-SQL               dependence on labeled datasets and computationally inten-
+                                                achieves 69.7% execution accuracy on the BIRD                 sive training. While this approach offers a practical and
+                                                development set, using a 32B open-source LLM                  cost-effective solution, it faces a fundamental challenge.
+                                                without fine-tuning. Alpha-SQL outperforms the
+                                                best previous zero-shot approach based on GPT-                The key challenge in zero-shot Text-to-SQL is the difficulty
+                                                4o by 2.5% on the BIRD development set. The                   of transferring and generalizing knowledge from pre-trained
+                                                code is available at https://github.com/                      LLMs to the specific task of SQL generation, based on
+                                                HKUSTDial/Alpha-SQL.                                          natural language queries and database schemas, without
+                                                                                                              fine-tuning on task-specific annotated data. This limitation
+                                                                                                              makes it difficult for the model to handle the complex map-
+                                                                                                              ping between natural language queries and diverse database
+                                         1. Introduction                                                      schemas, impeding its ability to accurately interpret schema
+                                         Text-to-SQL (a.k.a. NL2SQL) converts natural language                relationships, construct complex SQL queries, and maintain
+                                         queries into SQL, simplifying access to relational databases         robustness across various contexts.
+                                            1
+                                              The Hong Kong University of Science and Technology              Our Methodology and Contributions. To address the
+                                         (Guangzhou) 2 Renmin University of China 3 Huawei Technologies       above challenges, we propose Alpha-SQL, a novel approach
+                                         Ltd. Correspondence to: Yuyu Luo <yuyuluo@hkust-gz.edu.cn>.          that enables zero-shot Text-to-SQL as a process of progres-
+                                                                                                              sive SQL construction, where queries are progressively built
+                                         Proceedings of the 42 nd International Conference on Machine         step-by-step. The key idea of Alpha-SQL is to decompose
+                                         Learning, Vancouver, Canada. PMLR 267, 2025. Copyright 2025
+                                         by the author(s).                                                    the task into smaller, more manageable sub-tasks, each with
+
+                                                                                                          1
+                                    Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+       Plug-in Alpha-SQL
+       Directly prompting Qwen2.5 without ne-tuning
+                                                                        In summary, Alpha-SQL is a fine-tuning-free, plug-and-play
+       Zero-shot Text-to-SQL SOTA (RSL-SQL with GPT-4o)                 Text-to-SQL framework that enhances small open-source
+                     75%   67.2%
+                                                                        LLMs for Text-to-SQL tasks. As shown in Figure 1, it can
+                     60%    + 20%    + 17%   + 15%                      integrate and boost existing LLMs without fine-tuning on
+                     45%                                                Text-to-SQL datasets. Extensive experiments show Alpha-
+                     30%                                                SQL’s strong performance, achieving 69.7% execution accu-
+                     15%
+                                                                        racy on the BIRD development set, significantly outperform-
+                     0%                               Alpha-SQL
+                             7B       14B    32B                        ing existing zero-shot methods. Ablation studies confirm
+   BIRD (Dev)                                                           the effectiveness of our reasoning actions, and performance
+                                                                        improves with more MCTS rollouts.
+Figure 1. Alpha-SQL: A plug-in framework boosting small open-
+source LLMs. Our method significantly improves Qwen2.5’s per-
+formance by 15%-20% across different model sizes (7B-32B)               2. Related Work
+without fine-tuning, surpassing even GPT-4o based zero-shot Text-
+to-SQL SOTA (RSL-SQL) on the BIRD (Dev) dataset.
+                fi
+                                                                        Text-to-SQL. The Natural Language to SQL (Text-to-SQL,
+                                                                        a.k.a., NL2SQL) task involves translating natural language
+                                                                        questions into SQL queries. The emergence of Pre-trained
+contextual guidance, making it easier for the model to han-             Language Models (PLMs) like T5 (Raffel et al., 2020)
+dle complexity at each step. To achieve this, we model the              subsequently improved the performance of Text-to-SQL
+progressive construction process as a search problem over               tasks (Scholak et al., 2021; Li et al., 2023a;b; Gu et al.,
+a tree-structured space, where nodes represent partial rea-             2023). More recently, the development of LLMs has fur-
+soning states, and edges denote SQL construction actions                ther advanced Text-to-SQL capabilities. However, apply-
+(e.g., selecting a table or revising a SQL clause). By itera-           ing LLMs directly remains challenging due to issues like
+tively selecting edges (actions) from the root to a leaf node,          schema alignment, complex query generation, etc (Liu et al.,
+Alpha-SQL progressively constructs a valid SQL query.                   2024). To address this, recent works (Pourreza et al., 2025;
+Based on this idea, Alpha-SQL leverages a Monte Carlo                   Talaei et al., 2024; Li et al., 2024a; Cao et al., 2024; Liu
+Tree Search (MCTS) framework (Coulom, 2006; Xie et al.,                 et al., 2025a; Fan et al., 2024) have explored decomposing
+2024) to generate and explore SQL construction actions                  Text-to-SQL into subtasks, such as candidate SQL gener-
+dynamically. To facilitate efficient and effective search               ation, refinement, and selection. For example, CHASE-
+within the MCTS framework, we introduce the following                   SQL (Pourreza et al., 2025) employs a multi-step pipeline
+novel techniques.                                                       to generate and validate SQL candidates, mitigating errors
+                                                                        introduced by direct generation.
+First, to enhance reasoning capabilities during the search
+process, we propose the LLM-as-Action-Model, which in-                  Building on this direction, we propose Alpha-SQL, a pro-
+vokes an LLM as the reasoning action model in the MCTS                  gressive SQL construction framework that uses MCTS for
+framework to generate step-by-step reasoning (i.e., Chain-              dynamic query generation. Unlike prior methods relying on
+of-Thought) after each action taken. This reasoning is stored           static pipelines or fine-tuning, Alpha-SQL leverages LLMs
+in each node alongside the partial state, enabling Alpha-SQL            as action models, guiding the search in a context-aware man-
+to maintain context and track the LLM’s thought process                 ner, enabling efficient exploration and improved accuracy
+throughout the SQL construction process. This ensures that              without task-specific labeled data.
+each SQL construction action is both context-aware and                  Test-time Computation. Recent advances in test-time com-
+aligned with the overall reasoning path, which can guide the            putation (Snell et al., 2024; Liu et al., 2025a) have sig-
+search toward more promising SQL queries.                               nificantly improved LLM performance without modifying
+Second, to ensure accurate and efficient query generation               model parameters. Techniques such as planning, search,
+during the MCTS search process, we introduce a self-                    and verification during inference have enhanced reasoning
+supervised reward function to evaluate the quality of can-              across various tasks (Wei et al., 2022; Yao et al., 2023;
+didate SQL queries. Specifically, for each reasoning path,              Qiu et al., 2024; Hao et al., 2023; Zhang et al., 2025; Teng
+Alpha-SQL generates multiple candidate SQL queries us-                  et al., 2025; Zhu et al., 2024; Zhang et al., 2024b). Recent
+ing high-temperature sampling, filters out invalid queries,             methods, including tree-based search (Yao et al., 2023) and
+and computes a self-consistency score by comparing the                  Best-of-N sampling (Qiu et al., 2024), further optimized
+execution results of the sampled queries with those of the              inference through structured search. Recent work has also
+predicted SQL. This helps prioritize promising paths and re-            explored MCTS-based reasoning to enhance the capabilities
+fines the exploration process. Finally, Alpha-SQL calculates            of LLMs (Qi et al., 2024). While effective in general rea-
+the self-consistency scores of all candidate SQL queries and            soning tasks, these methods do not fully address the unique
+selects the SQL with the highest score as the final output.             challenges of Text-to-SQL, such as schema understanding,
+
+                                                                    2
+                              Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+                                                                         Edges (Actions)                                    Nodes
+generating semantically accurate SQL, and refining outputs                                                   𝑞 = “What’s the rank of Bob in the
+based on execution feedback.                                                                            𝒗𝟎   football match?”
+                                                                                                             𝐷 = “CREATE TABLE `players` (…)”
+                                                                        𝑎1: Column Value
+Alpha-SQL builds on test-time computation principles with                 Identification                     Column Value Thinking:
+                                                                                                             In the above question, there is a
+a search-based SQL generation framework designed for                                          𝒗𝟏             specific filter about match type and
+zero-shot Text-to-SQL. Unlike prior work, it integrates                                                      player name. So I need use
+                                                                       𝑎2: Column Function
+                                                                                                             `player`.`name` = ‘Bob’ and
+                                                                           Identification
+LLM-driven reasoning into the MCTS process for progres-                                                      `match`.`match_type` = ‘football’.
+                                                                                                   𝒗𝟐
+sive SQL query construction, optimizing the action space                                                     Column Function Thinking: …
+
+and incorporating database feedback to improve accuracy.                𝑎3: SQL Generation                   SQL Generation Thinking:
+                                                                                                             Based on my previous thoughts, I
+                                                                                                        𝒗𝟑   need a WHERE clause to filter the
+                                                                                                             match type and player, and there is
+                                                                            𝑎4: Termination
+3. Alpha-SQL                                                                                            𝒗𝟒
+                                                                                                             no functions needed. Thus, the final
+                                                                                                             SQL query is:
+                                                                                                             SELECT T1.rank FROM players AS T1
+3.1. Zero-shot Text-to-SQL                                                                                   JOIN matches AS T2 ON T1.id =
+                                                                                                             T2.player_id WHERE T1.name = ‘Bob’
+                                                                            LLM-as-Action-Model              AND T2.match_type = ‘football’;
+Text-to-SQL Task. Let D = (T , C, R) represent a rela-
+tional database, where T is the set of tables, C is the set of
+columns in those tables, and R denotes the relationships              Figure 2. Example of the search tree formulation for Text-to-SQL.
+between tables (e.g., primary key-foreign key constraints).
+Let Q denote all well-specified natural language questions
+over D, and Y all valid SQL queries over D.                           be expressed as: y = v0 ⊕ v1 ⊕ · · · ⊕ vt , where ⊕ denotes
+The goal is to find a mapping function f such that for any            the concatenation or composition of the actions represented
+given question q ∈ Q, f (q, D) produces a syntactically and           by the nodes along the path.
+semantically correct SQL query y ∈ Y.                                 Our goal is to identify an optimal reasoning path in the
+In the zero-shot setting, the key challenge is to construct a         search tree that constructs an accurate SQL query for a given
+mapping function f without task-specific labeled data. This           natural language question q and database schema D.
+requires the model to generalize across unseen SQL queries            Complexity of the Search Space. Efficiently exploring the
+and databases, relying solely on pre-trained knowledge and            search space S for Text-to-SQL generation is a significant
+the provided database schema.                                         challenge due to its combinatorial nature. The size of S,
+Formulating Text-to-SQL as a Search Problem. We de-                   denoted as |S|, grows exponentially with the complexity of
+fine the Text-to-SQL task as a search problem over a vast             the database schema D and the question q. For instance, the
+space of potential SQL queries, where the search space S              number of potential queries grows exponentially with the
+consists of all valid SQL queries for a given database D and          number of tables, columns, possible join conditions, and
+question q. To structure this space, we represent S as a tree         nested subqueries. This makes exhaustive search practically
+Ψ = (V, E), where:                                                    impossible, and therefore an efficient search strategy needs
+                                                                      to be used to explore this vast space effectively and identify
+(1) Nodes (V ): Each node v ∈ V represents a partial reason-          the correct SQL query.
+ing state at a specific step in the query construction process.
+As shown in Figure 2, The root node v0 represents the                 3.2. An Overview of Alpha-SQL
+initial empty query and contains the input question q and
+database schema D. Intermediate nodes store incremental               To address the challenges of navigating the exponential
+reasoning steps, such as identifying column values, select-           search space S and generating high-quality SQL queries
+ing functions, or constructing SQL clauses. A leaf node or            from a natural language question q, we propose Alpha-
+termination node vt represents either a fully constructed             SQL, a novel framework that leverages Monte Carlo Tree
+SQL query or a state where a termination action is applied.           Search (MCTS).
+
+(2) Edges (E): Each edge e ∈ E corresponds to an action               MCTS-based Search with LLM-as-Action-Model. Build-
+in the query construction process, such as selecting a table,         ing upon the search problem formulation in Section 3.1,
+adding a condition, or applying an aggregation function.              Alpha-SQL employs MCTS to construct and explore the
+These actions model transitions between intermediate query            search tree Ψ = (V, E). Given an input question q, database
+states in the search tree.                                            D, and an LLM M , the MCTS process iteratively builds Ψ.
+                                                                      The root node v0 ∈ V represents the initial state with an
+(3) A Path from Root to Leaf Nodes (Candidate SQL): A                 empty SQL query. The edges e ∈ E represent an action a,
+path from the root node v0 to a leaf node vt corresponds to a         where we invoke the LLM M to select a SQL construction
+sequence of SQL construction actions that, when composed,             action such as schema selection or column value identifica-
+forms a complete SQL query y ∈ S. The SQL query y can                 tion, as shown in Figure 2. The MCTS process iteratively
+
+                                                                  3
+                                                                   Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+                                                                                                 MCTS for Candidate SQL Generation                                            SQL Selection
+     LLM-as-Action-Model
+
+                                                                                                                      Repeat
+                                                        Previous
+                           Question    Database
+                                                        Actions
+                                                                          (a) Selection               (b) Expansion             (c) Simulation         (d) Backprogation
+
+                                                                          𝑎1
+                                                                                 𝑣0
+                              𝑎𝑖                          𝑣𝑖+1
+                                                                         𝑣1
+                            Action        LLM             Next
+                                                          State
+
+
+
+
+                             𝑎1 Rephrase Question
+                                                                              Visted Edge
+                             𝑎2 Schema Selection
+                                                                                                                                                                 Reward
+      Action Space
+
+
+
+
+                                                                              History Node
+                             𝑎3 Column Value Identification
+                                                                                                                      Termination
+                                                                              Visited Node
+                             𝑎4 Column Function Identification                                                                               Reward for SQL 𝒚                SQL
+                                                                                                                                                                           Execution
+𝑎
+                             𝑎5    SQL Generation                                                                                                                                             Self-
+                                                                                                                                                                                           consistency
+                             𝑎6    SQL Revision                                       UCT Selection                                     Self-supervised Reward
+                                                                                                                                                 𝑁
+                                                                                        𝑄 𝑣, 𝑎    𝑙𝑛𝑁 𝑣                                      1
+                             𝑎7                                         𝑎 = argmax(            +𝑐        )                                                                             Selected SQL
+                                   Termination                                                                                 𝑅 𝑦, 𝑞, 𝐷 =     ෍ 𝕀[𝐸𝑋 𝑦, 𝐷 = 𝐸𝑋(𝑦𝑖 , 𝐷)]
+                                                                                𝑎∈𝐴     𝑁 𝑣, 𝑎    𝑁 𝑣, 𝑎                                     𝑁
+                                                                                                                                                 1
+
+
+                                                                                        Figure 3. An Overview of Alpha-SQL.
+
+    invokes M to apply actions during the search, exploring                                                           where yi are sampled SQL queries, and N is the number
+    different paths. Each node vi ∈ V represents a partial                                                            of samples. This formulation reinforces SQL queries that
+    reasoning state after applying a sequence of actions. A com-                                                      consistently yield stable execution results, enabling Alpha-
+    plete path from the root to a termination (leaf) node forms                                                       SQL to prioritize reliable reasoning trajectories without
+    a reasoning trajectory corresponding to a candidate SQL                                                           requiring annotated data.
+    query. The MCTS process generates multiple such trajecto-
+    ries, forming a set T = {τ1 , τ2 , . . . , τn } of candidate SQL                                                  4. The Design Details of Alpha-SQL
+    queries. Therefore, Alpha-SQL can efficiently explore the
+    vast search space S defined in the problem formulation.                                                           4.1. LLM-as-Action-Model
+    Self-Supervised Rewards. The reward function plays a                                                              A key challenge in zero-shot text-to-SQL is the difficulty of
+    crucial role in the MCTS process by evaluating the utility                                                        transferring general knowledge from pre-trained language
+    of each action, guiding the search toward more promising                                                          models to the specific task of SQL generation.
+    SQL queries. Traditional methods like Outcome Reward
+                                                                                                                      To enhance the reasoning capabilities of our framework,
+    Models (Zelikman et al., 2022) and Progress Reward Mod-
+                                                                                                                      we propose the LLM-as-Action-Model, which leverages
+    els (Uesato et al., 2022) require domain-specific labeled
+                                                                                                                      LLMs to generate reasoning actions (i.e., CoT Thoughts)
+    data for training, making them difficult to generalize across
+                                                                                                                      dynamically based on the current context of the problem.
+    different datasets (Zhang et al., 2024a).
+                                                                                                                      As shown in Figure 3, LLM-as-Action-Model empowers
+    Inspired by human reasoning, we observe that individu-                                                            the LLMs to generate appropriate action outputs based on
+    als who are confident in their answers tend to consistently                                                       the question, database schema, and current partial reasoning
+    provide the same response across multiple attempts, indi-                                                         state (including previous actions), enabling the model to
+    cating high confidence in their solution. Conversely, when                                                        build a valid SQL query in a step-by-step manner.
+    responses vary, it suggests low confidence, implying un-
+                                                                                                                      Formally, at step i of the reasoning process (vi ), MCTS
+    certainty and lower reliability (Qi et al., 2024). This funda-
+                                                                                                                      selects an SQL construction action ai from the action space,
+    mental intuition directly informs and forms the conceptual
+                                                                                                                      which is defined later. Based on the reasoning trajectory
+    foundation of our innovative self-consistency-based reward
+                                                                                                                      v0 ⊕· · ·⊕vi , the LLM is prompted to execute ai and generate
+    function. Within this function, the perceived confidence
+                                                                                                                      the next state vi+1 :
+    or correctness of a candidate SQL query is quantitatively
+    determined by the consistency of its execution results when
+    compared against those obtained from a diverse set of mul-                                                         vi+1 = LLM (q, D, Actions(v0 , · · · , vi ), P rompt(ai )),
+    tiple sampled queries. The reward is computed as:
+
+                                                    N
+                                                                                                                      where Actions(·) refers to all previous reasoning steps in
+                  1 X
+     R(y, q, D) =       1[Execute(y, D) = Execute(yi , D)],                                                           the trajectory, and P rompt(·) represents the prompt instruc-
+                  N i=1                                                                                               tion for a specific action.
+
+                                                                                                                4
+                             Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+SQL Construction Reasoning Action Space. The action
+                                                                                   Table 1. Action Space with Ordering.
+space defines the set of potential reasoning steps an LLM
+                                                                                 Previous Action               Valid Next Actions
+can take to decompose and solve Text-to-SQL problems. It                                 −                     A1 , A2 , A3 , A4 , A5
+is crucial for the LLM-as-Action Model to guide the pro-                    A1 : Question Rephrasing            A2 , A3 , A4 , A5
+gressive construction of SQL queries by specifying possible                   A2 : Schema Selection                 A3 , A4 , A5
+actions at each stage. Previous works (Pourreza et al., 2025;           A3 : Column Value Identification            A2 , A4 , A5
+Talaei et al., 2024; Gao et al., 2024b) used limited actions           A4 : Column Function Identification          A2 , A3 , A5
+and fixed pipelines, which restricted the model’s ability to                  A5 : SQL Generation                    A6 , A7
+explore the full space of potential solutions.                                  A6 : SQL Revision                        A7
+Inspired by human thinking, where some might jump                                A7 : Termination                        −
+straight to the answer while others first clarify the question
+and break it down into subtasks, we introduce new reason-
+ing actions, such as question rewriting (Qi et al., 2024),           tion (COUNT(people.id)). Analysis by CHASE-
+alongside existing ones. In total, our action space defines          SQL (Pourreza et al., 2025) revealed that function-related
+seven distinct reasoning actions. The specific prompts for           errors account for 19% of mistakes in the BIRD develop-
+each action are illustrated in Appendix A.2.                         ment set. To improve function handling ability, we introduce
+A1 : Question Rephrasing. Text-to-SQL systems need to                a column function identification action during inference.
+handle diverse question styles and ambiguities from differ-          A5 : SQL Generation. SQL generation is the core com-
+ent user groups (Liu et al., 2024). While NL-Rewriter (Ma            ponent of Text-to-SQL systems. CHASE-SQL (Pourreza
+et al., 2024) addresses this through experience-based ques-          et al., 2025) introduced a Divide-and-Conquer CoT strategy
+tion rewriting, it struggles in zero-shot scenarios where            that breaks down complex queries into multiple subtasks,
+training data is unavailable. Building on rStar (Qi et al.,          solves them independently, and combines solutions. This
+2024), we use few-shot prompting to decompose questions              method particularly excels at handling nested queries. We
+into a structured (conditions list, question) format.                incorporate this strategy into our reasoning action space.
+A2 : Schema Selection. Databases often contain complex               A6 : SQL Revision. LLMs can generate syntactically in-
+schemas, but individual SQL queries typically use only a             valid SQL queries in complex scenarios (Wang et al., 2025;
+small subset of available elements. This mismatch creates            Pourreza et al., 2025). Drawing inspiration from human
+challenges for accurate SQL generation (Liu et al., 2024).           debugging practices, we implement an execution-guided
+Prior work has established schema selection as a critical            correction mechanism. Our approach provides the LLM
+component of SQL generation (Cao et al., 2024; Pourreza              with the user question, schema, incorrect SQL, and execu-
+et al., 2025; Talaei et al., 2024). Following (Talaei et al.,        tion results to guide query revision. The system performs
+2024), we use Chain-of-Thought (CoT) prompting to iden-              multiple correction rounds until either obtaining a valid SQL
+tify the relevant schema subset for each user question, which        query or reaching a maximum attempt limit Nrevision .
+then guides subsequent query generation.
+                                                                     A7 : Termination. The termination action is invoked when
+A3 : Column Value Identification. Text-to-SQL systems                the reasoning process yields the final predicted SQL, signi-
+need to accurately identify filtering conditions in user ques-       fying the conclusion of a reasoning trajectory. We specify
+tions. For example, “What is Bob’s best ranking in foot-             that the termination action must occur following either SQL
+ball matches?” requires filtering on both name (“Bob”)               Generation or SQL Revision actions.
+and match type (“football”) (e.g., WHERE name =
+‘Bob’ AND match type = ‘football’). CHESS-                           Action Ordering and Constraints. Each reasoning trajec-
+SQL (Talaei et al., 2024) found that 20% of errors in the            tory follows a structured order, ensuring logical coherence.
+BIRD development set stem from incorrect filtering columns           For example, some actions, like SQL Revision, must oc-
+or value selection. To address this, we introduce a column           cur only after SQL Generation. Table 1 defines the valid
+value identification action that evaluates potential filtering       transitions between actions. Furthermore, to prevent the
+values before SQL generation.                                        possibility of infinite loops and ensure forward progress in
+                                                                     the reasoning trajectory, we impose a constraint that restricts
+A4 : Column Function Identification. Complex SQL                     each defined action to appear only once within any single
+queries often require aggregate functions (e.g., COUNT)              query construction process.
+and scalar functions (e.g., STRFTIME). For example,
+the question “How many people were born in 2024?”                    4.2. MCTS for Candidate SQL Generation
+necessitates both date manipulation (STRFTIME(‘%Y’,
+people.date of birth) = ‘2024’) and aggrega-                         Candidate SQL Generation with MCTS Rollout. We
+                                                                     generate Candidate SQL through multiple MCTS rollouts.
+
+                                                                 5
+                              Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+Specifically, each rollout includes four distinct phases: Se-          2025), which rely on fine-tuned proprietary models such as
+lection, Expansion, Simulation, and Backpropagation.                   Gemini-1.5-Flash, requiring extensive domain-specific data.
+(1) Selection. This phase identifies promising nodes for               We show the pseudo-code of Alpha-SQL in Appendix A.1.
+expansion by traversing from the root node (v0 ) to ei-
+                                                                       Pruning Strategies. Alpha-SQL incorporates schema con-
+ther an unexpanded leaf or termination node. We use Up-
+                                                                       straints and semantic rules into the search process to prune
+per Confidence Bound applied to Trees (UCT) (Kocsis &
+                                                                       invalid paths early. A key aspect of our pruning strategy
+Szepesvári, 2006) to balance exploration and exploitation
+                                        Q(v,a)
+                                                q
+                                                       lnN (v)
+                                                                       is the elimination of redundant nodes. For instance, when
+during node selection: U CT (v, a) = N    (v,a) + c    N (v,a) ,       performing a Schema Selection action, we may sample the
+where N (v, a) counts visits to action a from node v, and              LLM M multiple times (e.g., 3 times). Although the Chain-
+N (v) tracks total visits to node v. Q(v, a) is the estimated          of-Thought content generated by M may differ in each sam-
+reward for action a from node v, updated via backpropaga-              ple, if the final selected schema subset is identical, we create
+tion. We select the action with the maximum UCT score                  only one child node instead of three duplicate nodes. This
+and move to the resulting child node. Notably, if there exist          de-duplication significantly reduces the branching factor of
+any unvisited child nodes (i.e., N (v, a) = 0), we prioritize          the search tree without loss of information.
+the selection of such nodes over UCT selection.
+(2) Expansion. The expansion phase generates child nodes               4.3. Database Value Retrieval
+from the selected node. Valid actions are determined by                Efficiently and accurately retrieving database values rel-
+the node type (Table 1) and executed via LLM prompt-                   evant to a user’s natural language question is crucial for
+ing. Each action is sampled Nexpansion times with tempera-             Text-to-SQL generation (Liu et al., 2024). SQL queries
+ture Texpansion , creating Nexpansion × |Evalid | child nodes,         typically reference a limited subset of column values ex-
+where |Evalid | represents the number of valid actions. This           tracted from potentially extensive databases, primarily for
+sampling approach enhances reasoning diversity.                        utilization within filtering conditions, such as those spec-
+(3) Simulation. A complete simulation process consists                 ified in WHERE clauses. However, a significant challenge
+of iterative node selection and expansion until reaching a             arises from the potential semantic discrepancies between
+termination node. Throughout the simulation process, all               how a user phrases their query and how values are stored
+newly expanded child nodes are persistently maintained                 in the database (e.g., a user might say “America” while the
+within the tree structure.                                             database stores “United States”). Following Talaei et al.
+                                                                       (2024), we employ a two-stage approach involving offline
+(4) Backpropagation. At a termination node (vt ), backprop-            pre-processing and online retrieval.
+agation begins by evaluating the predicted SQL using the
+self-supervised reward function from Section 3.2. We iden-             Offline Pre-processing. In the offline phase, we focus on
+tify the action (A5 or A6 ) that produced the final SQL, then          pre-processing database values to facilitate fast and accurate
+sample Nreward SQL queries with temperature Treward to                 retrieval during the online phase. This process specifically
+ensure diversity. The reward value r is calculated from                targets TEXT type column values, as these are most prone to
+the self-consistency score between the execution results of            ambiguities and variations in user queries. For these selected
+the sampled and predicted SQLs. The process then back-                 textual column values, we apply the MinHash (Datar et al.,
+tracks from vt to the root node, updating Q(v, a) and N (v)            2004) technique to generate compact signatures. These Min-
+values for all nodes along the path v0 ⊕ · · · ⊕ vt using:             Hash signatures are then stored locally, creating an indexed
+Q(v, a) = Q(v, a) + r, N (v) = N (v) + 1. These up-                    and optimized representation of the database values that are
+dated values guide future search directions through the UCT            most likely to require disambiguation.
+formula in subsequent rollouts.                                        Online Retrieval. During the online phase, when a user sub-
+After Nrollout rollouts, we collect all complete trajectories          mits a natural language question, we first extracts relevant
+that reach termination nodes, forming a set of candidate               keywords from the question, which can be guided by few-
+SQL reasoning trajectories T = {τ1 , τ2 , . . . , τn }.                shot prompts (Appendix A.3). Once the keywords are identi-
+                                                                       fied, Locality Sensitive Hashing (LSH) (Datar et al., 2004) is
+Final SQL Selection. To select the optimal trajectory and              utilized in conjunction with the pre-computed MinHash sig-
+SQL query from T , we leverage the convergent nature of                natures stored locally. This LSH-based search allows for ef-
+Text-to-SQL: different reasoning paths yield equivalent SQL            ficient retrieval of database values that are semantically sim-
+queries for a given question. We execute all predicted SQL             ilar to the extracted keywords. The retrieved values are then
+queries and select the one with the highest execution result           subject to further filtering based on predefined editing simi-
+consistency as the final prediction. This approach differs             larity and semantic similarity thresholds (ϵedit , ϵsemantic ).
+from previous methods like CHASE-SQL (Pourreza et al.,                 The semantic matching employs OpenAI’s text-embedding-
+
+
+                                                                   6
+                                Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+3-large model. The finally selected, relevant database values                                                                       CHASE-SQL
+                                                                                                                                 (Gemini-1.5-pro)
+                                                                                                      Alpha-SQL
+are then incorporated into the database schema prompt pro-                               Alpha-SQL
+                                                                                Alpha-SQL (14B)
+                                                                                                        (32B)
+                                                                                                                              RSL-SQL
+                                                                                                                             (GPT-4o)
+vided to our LLM-as-Action-Model, enriching the context                            (7B)                     Xiyan-SQL
+                                                                                                              (32B)                                         MCS-SQL
+                                                                                                                                                            (GPT-4)
+for the SQL generation process.                                                                          CHESS-SQL
+                                                                                                           (33B)                                            SuperSQL
+                                                                                             SFT-Codes                                                       (GPT-4)
+                                                                                               (15B)
+                                                                                 SFT-Codes
+5. Experiments                                                                     (7B)                                 Gemini-1.5-pro
+                                                                                                                                                      DAIL-SQL
+                                                                                                                                                       (GPT-4)
+                                                                                                                        GPT-4o
+5.1. Experimental Setup                                                                                                                      DeepSeek-V3
+
+
+                                                                                Qwen2.5-Coder-7B
+Datasets. We utilize the Spider (Yu et al., 2018) and                                                                                        DeepSeek-R1
+
+
+BIRD (Li et al., 2023c) development sets for evaluation.
+Spider contains 1034 (NL, SQL) pairs, and BIRD includes
+                                                                                                   QwQ-32B-Preview
+1534 pairs, with BIRD queries being more complex and
+containing domain-specific keywords like CASE and IIF.
+To facilitate more comparison experiments while reducing
+computational costs (Sections 5.3 to 5.5), we follow CHESS-               Figure 4. Performance vs. Model Size on the BIRD dev. For
+SQL (Talaei et al., 2024) and utilize the same Subsampled                 GPT-4, GPT-4o, and Gemini-1.5-pro, we referenced the parameter
+Development Set (SDS), which comprises 10% of each                        descriptions from (Abacha et al., 2024) for plotting.
+database from the BIRD development set. The SDS contains
+147 samples, consisting of 81 simple, 54 moderate, and 12
+challenging questions.
+Metrics. Following prior work (Pourreza et al., 2025), we                 performance of RSL-SQL (Cao et al., 2024), which relies
+use Execution Accuracy (EX) as the metric, defined as the                 on the proprietary GPT-4o. Notably, this performance sur-
+percentage of predicted SQL queries that generate execution               passes many methods that require data fine-tuning. Upon
+results identical to those of the ground-truth queries.                   scaling our inference model to 32B parameters, Alpha-SQL
+                                                                          demonstrated superior performance in the zero-shot sce-
+Hardware. All experiments are run on an Ubuntu 22.04.3                    nario, with 69.7% average accuracy. Even when compared
+LTS server with 512GB of RAM and dual 40-core Intel(R)                    to methods with domain data fine-tuning, Alpha-SQL’s per-
+Xeon(R) Platinum 8383C CPUs (@ 2.70GHz). Open-source                      formance is exceeded only by CHASE-SQL (Pourreza et al.,
+LLMs are deployed locally using 8 GPUs, each with 80GB                    2025), which requires fine-tuning the proprietary Gemini-
+of memory and 312 TFLOPS with BF16 precision.                             1.5-Flash model, and XiYan-SQL (Gao et al., 2024b), which
+                                                                          fine-tunes an unknown model. These results confirm Alpha-
+5.2. Main Results on BIRD and Spider Datasets                             SQL’s effectiveness as a plug-and-play framework that de-
+Settings. We employed three open-source models from the                   livers competitive performance without fine-tuning.
+Qwen2.5-Coder family - 7B, 14B, and 32B (Yang et al.,                     Performance on Spider Dataset. We also evaluate Alpha-
+2024) - as inference models for Alpha-SQL. The related                    SQL on the Spider development dataset. As shown in Ta-
+hyper-parameters were set as follows: For offline database                ble 3, Alpha-SQL with Qwen2.5-Coder-14B outperforms
+value retrieval, we set the editing similarity ϵedit as 0.3 and se-       existing methods. Notably, it achieves a 2.1% improvement
+mantic similarity ϵsemantic as 0.6. For the MCTS rollout pro-             over SFT CodeS-15B (Li et al., 2024b), which was specifi-
+cess, we set the number of rollouts to Nrollout = 24. During              cally fine-tuned for the Spider dataset. This demonstrates
+node expansion, each action was sampled Nexpansion = 3                    Alpha-SQL’s capability to achieve strong generalization per-
+times with a sampling temperature of Texpansion = 0.8. In                 formance without dataset-specific fine-tuning.
+the computation of self-supervised rewards, we set the SQL
+sampling parameters with Nreward = 5 repetitions and a                    Performance-Scale Trade-off Analysis. To explore the
+temperature of Treward = 1.0. For the SQL Revision action                 performance potential of smaller open-source LLMs, we
+(A6 ), we set a maximum iteration limit of Nrevision = 10                 conducted this experiment to demonstrate that Alpha-SQL
+for the multi-round correction process.                                   can unlock the full potential of smaller models while main-
+                                                                          taining cost efficiency. Figure 4 shows that Alpha-SQL sig-
+Performance on BIRD Dataset. As shown in Table 2,                         nificantly outperforms larger models on the Pareto frontier,
+we conducted a comprehensive comparison between Alpha-                    enabling smaller models, such as the 7B and 14B versions,
+SQL and current state-of-the-art approaches, categorizing                 to achieve accuracy comparable to or surpassing much larger
+methods based on their zero-shot capabilities. Alpha-SQL,                 models, including GPT-4o-based approaches. This demon-
+leveraging the relatively lightweight Qwen2.5-Coder-7B                    strates our framework’s ability to optimize Text-to-SQL
+model, achieved 66.8% average accuracy, comparable to the                 performance across varying model scales.
+
+                                                                      7
+                                                     Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+                                                         Table 2. Execution Accuracy on BIRD Development Dataset.
+                                                              Inference                 Selection        Zero-shot                 Accuracy (%)
+                            Method
+                                                                Model                    Model            Setting      Simple   Moderate Challenging   All
+    SFT CodeS (Li et al., 2024b)                              CodeS-7B                      -                ✗          64.6      46.9        40.3     57.0
+    SFT CodeS (Li et al., 2024b)                              CodeS-15B                     -                ✗          65.8      48.8        42.4     58.5
+  Distillery (Maamari et al., 2024)                             GPT-4o                      -                ✗            -        -            -      67.2
+  CHESS-SQL (Talaei et al., 2024)                         Deepseek-Coder-33B          GPT-4-Turbo            ✗            -        -            -      65.0
+  CHESS-SQL (Talaei et al., 2024)                         Deepseek-Coder-33B          LLaMA3-70B             ✗            -        -            -      61.5
+ CHASE-SQL (Pourreza et al., 2025)                          Gemini-1.5-Pro           Gemini-1.5-Flash        ✗            -        -            -      73.0
+   XiYan-SQL (Gao et al., 2024b)                                   ?                        ?                ✗            -        -            -      73.3
+   XiYan-SQL (Gao et al., 2024b)                          Qwen2.5-Coder-32B         Qwen2.5-Coder-32B        ✗            -        -            -      67.0
+   DAIL-SQL (Gao et al., 2024a)                                 GPT-4                 SC Selection          ✓           63.0      45.6        43.1     55.9
+    SuperSQL (Li et al., 2024a)                                 GPT-4                 SC Selection          ✓           66.9      46.5        43.8     58.5
+    MCS-SQL (Lee et al., 2025)                                  GPT-4                    GPT-4              ✓             -        -            -      64.4
+    RSL-SQL (Cao et al., 2024)                                  GPT-4o                   GPT-4o             ✓           74.4      57.1        53.8     67.2
+         Alpha-SQL (Ours)                                 Qwen2.5-Coder-7B            SC Selection          ✓           72.6      59.3        53.1     66.8
+         Alpha-SQL (Ours)                                 Qwen2.5-Coder-14B           SC Selection          ✓           74.6      61.0        55.9     68.7
+         Alpha-SQL (Ours)                                 Qwen2.5-Coder-32B           SC Selection          ✓           74.5      64.0        57.2     69.7
+
+
+                                                         Table 3. Execution Accuracy on Spider Development Dataset.
+                                                              Inference               Selection     Zero-shot                Accuracy (%)
+                            Method
+                                                               Model                   Model         Setting    Easy     Medium Hard Extra Hard        All
+    SFT CodeS (Li et al., 2024b)                              CodeS-7B                    -             ✗       94.8      91.0     75.3   66.9         85.4
+    SFT CodeS (Li et al., 2024b)                             CodeS-15B                    -             ✗       95.6      90.4     78.2   61.4         84.9
+    C3-SQL (Dong et al., 2023)                              GPT-3.5-Turbo            SC Selection      ✓        92.7      85.2     77.6   62.0         82.0
+ DIN-SQL (Pourreza & Rafiei, 2023)                              GPT-4                     -            ✓        92.3      87.4     76.4   62.7         82.8
+   DAIL-SQL (Gao et al., 2024a)                                 GPT-4                SC Selection      ✓        91.5      90.1     75.3   62.7         83.6
+   ZeroNL2SQL (Fan et al., 2024)                                GPT-4                     -            ✓         -         -        -      -           84.0
+   MAC-SQL (Wang et al., 2025)                                  GPT-4                     -            ✓         -         -        -      -           86.8
+    SuperSQL (Li et al., 2024a)                                 GPT-4                SC Selection      ✓        94.4      91.3     83.3   68.7         87.0
+        Alpha-SQL (Ours)                                  Qwen2.5-Coder-7B           SC Selection      ✓        94.0      89.2     76.4   63.3         84.0
+        Alpha-SQL (Ours)                                  Qwen2.5-Coder-14B          SC Selection      ✓        94.0      91.0     79.9   72.3         87.0
+
+
+                  85
+                            Upper Bound (7B)
+                                                                                              the number of MCTS rollouts affects performance, we con-
+                            Accuracy (7B)                                                     ducted an in-depth analysis. We conducted experiments
+                  80
+                                                                                              on the SDS dataset using the Qwen2.5-Coder-7B model,
+                                                                                              maintaining all hyper-parameters identical to Section 5.2
+   Accuracy (%)
+
+
+
+
+                  75
+                                                                                              except for the number of rollouts (Nrollout ). We report
+                                                                                              both the upper bound accuracy and final accuracy. Similar
+                  70
+                                                                                              to CHASE-SQL (Pourreza et al., 2025), the upper bound
+                  65
+                                                                                              accuracy represents the percentage of samples where the
+                                                                                              candidate SQL set contains the correct SQL query before
+                  60
+                                                                                              the final SQL selection. We observe a positive correla-
+                       4           8            12         16      20          24
+                                               MCTS Rollouts
+                                                                                              tion between the number of MCTS rollouts and both upper
+                           Figure 5. Accuracy vs. MCTS Rollouts.                              bound and final accuracy metrics. This demonstrates Alpha-
+                                                                                              SQL’s capability to enhance Text-to-SQL task performance
+                                                                                              through more MCTS explorations.
+5.3. Impact of MCTS Rollouts on Performance
+                                                                                              5.4. Comparison with Baseline LLMs
+The efficiency of MCTS in exploring large search spaces is
+a key feature of Alpha-SQL. Based on Table 1, we calcu-                                       In this section, we present an evaluation of the baseline
+lated that there are over 3000 possible reasoning paths for                                   performance characteristics of various LLMs when applied
+each text-to-SQL task. Remarkably, Alpha-SQL achieves                                         directly to the Text-to-SQL task on the SDS dataset. These
+significant performance improvements with just 24 MCTS                                        LLMs were categorized into two groups: general LLMs,
+rollouts, suggesting that our Alpha-SQL can efficiently ex-                                   exemplified by models such as GPT-4o, and LLMs specifi-
+plore significantly larger search spaces.                                                     cally optimized for reasoning tasks, such as DeepSeek-R1.
+                                                                                              For a fair comparison, all baseline LLMs were prompted
+To further investigate this efficiency and understand how
+
+                                                                                          8
+                              Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+Table 4. Comparison with Baseline LLMs on the SDS dataset.             6. Conclusion
+                    Model              Accuracy (%)
+                Deepseek-V3                 51.2                       In this paper, we proposed Alpha-SQL, a zero-shot Text-to-
+                   GPT-4o                   53.7                       SQL framework that frames SQL generation as a structured
+               Gemini-1.5-Pro               56.2                       search problem. By combining Monte Carlo Tree Search
+             QwQ-32B-Preview                38.8
+                                                                       with LLM-as-Action-Model, Alpha-SQL explores the SQL
+                DeepSeek-R1                 50.3
+        Gemini-2.0-Flash-Thinking-Exp       60.8                       query space efficiently without fine-tuning the LLMs. Ex-
+             Qwen2.5-Coder-7B               47.6                       periments show competitive performance, with 69.7% on
+            + Alpha-SQL (Ours)          64.6 (↑ 17.0)                  the BIRD development set. Ablation studies validate the
+                    Phi-4                   43.5                       effectiveness of our reasoning actions, and performance
+            + Alpha-SQL (Ours)          60.0 (↑ 16.5)                  improves with more MCTS rollouts.
+
+
+         Table 5. Ablation Study on the Action Space.
+                                                                       Acknowledgements
+               Action Space                    Accuracy (%)            This paper is supported by NSF of China (62402409,
+       A1 , A2 , A3 , A4 , A5 , A6 , A7            64.6                62436010, and 62441230), Guangdong provincial project
+     w/o A1 (Question Rephrasing)               63.9 (↓ 0.7)           2023CX10X008, Guangdong Basic and Applied Basic Re-
+       w/o A2 (Schema Selection)                63.1 (↓ 1.5)           search Foundation (2023A1515110 545), Guangzhou Basic
+  w/o A3 (Column Value Identification)          64.2 (↓ 0.4)           and Applied Basic Research Foundation (2025A04J3935),
+ w/o A4 (Column Function Identification)        64.0 (↓ 0.6)
+                                                                       and Guangzhou-HKUST(GZ) Joint Funding Program
+         w/o A6 (SQL Revision)                  62.8 (↓ 1.8)
+                                                                       (2025A03J3714).
+
+
+using a standardized Text-to-SQL prompt, detailed in Ap-               Impact Statement
+pendix A.4. As shown in Table 4, our Alpha-SQL, utilizing
+                                                                       This paper presents work whose goal is to advance the field
+a model with only 7B parameters, surpasses all baseline
+                                                                       of Machine Learning. There are many potential societal
+models in performance. Notably, Alpha-SQL outperforms
+                                                                       consequences of our work, none of which we feel must be
+Gemini-2.0-Flash-Thinking-Exp, a sophisticated reasoning-
+                                                                       specifically highlighted here.
+optimized model, despite using a weaker model. This shows
+that the Text-to-SQL task requires targeted reasoning op-
+timization, which is a strength of the Alpha-SQL frame-                References
+work. Moreover, to validate Alpha-SQL’s plug-and-play                  Abacha, A. B., Yim, W., Fu, Y., Sun, Z., Yetisgen, M.,
+advantages, we conducted additional experiments using                   Xia, F., and Lin, T. MEDEC: A benchmark for medical
+Phi-4 (Abdin et al., 2024) and Qwen2.5-Coder-7B as infer-                error detection and correction in clinical notes. CoRR,
+ence models. Compared to directly prompting these LLMs,                  abs/2412.19260, 2024.
+Alpha-SQL achieved significant accuracy improvements of
+17.0% and 16.5% for Qwen2.5-Coder-7B and Phi-4, respec-                Abdin, M. I., Aneja, J., Behl, H. S., Bubeck, S., Eldan, R.,
+tively. These results validate Alpha-SQL’s generalizability              Gunasekar, S., Harrison, M., Hewett, R. J., Javaheripi,
+and effectiveness across different inference models.                     M., Kauffmann, P., Lee, J. R., Lee, Y. T., Li, Y., Liu, W.,
+                                                                         Mendes, C. C. T., Nguyen, A., Price, E., de Rosa, G.,
+5.5. Ablation Study of Action Space                                      Saarikivi, O., Salim, A., Shah, S., Wang, X., Ward, R.,
+                                                                        Wu, Y., Yu, D., Zhang, C., and Zhang, Y. Phi-4 technical
+The purpose of this ablation study is to validate the effective-         report. CoRR, abs/2412.08905, 2024.
+ness of our proposed Text-to-SQL reasoning action space
+and the LLM-as-Action-Model approach. To achieve this,                 Cao, Z., Zheng, Y., Fan, Z., Zhang, X., Chen, W., and
+we conducted experiments on the SDS dataset, systemati-                  Bai, X. RSL-SQL: robust schema linking in text-to-sql
+cally removing individual actions from the original action               generation. CoRR, abs/2411.00073, 2024.
+space while maintaining the parameter settings from Sec-
+tion 5.2. Table 5 presents the results of these experiments.           Coulom, R. Efficient selectivity and backup operators in
+                                                                         monte-carlo tree search. In Computers and Games, vol-
+Table 5 shows that removing any action from the original                 ume 4630 of Lecture Notes in Computer Science, pp.
+action space negatively impacts performance. The SQL                     72–83. Springer, 2006.
+Revision action demonstrates particular significance, as it
+leverages database interaction to incorporate feedback into            Datar, M., Immorlica, N., Indyk, P., and Mirrokni, V. S.
+the LLM for SQL correction, highlighting the importance                  Locality-sensitive hashing scheme based on p-stable dis-
+of database execution feedback for Text-to-SQL tasks.                    tributions. In SCG, pp. 253–262. ACM, 2004.
+
+                                                                   9
+                             Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+Dong, X., Zhang, C., Ge, Y., Mao, Y., Gao, Y., Chen, L.,              Li, J., Hui, B., Qu, G., Yang, J., Li, B., Li, B., Wang, B.,
+  Lin, J., and Lou, D. C3: zero-shot text-to-sql with chatgpt.          Qin, B., Geng, R., Huo, N., Zhou, X., Ma, C., Li, G.,
+  CoRR, abs/2307.07306, 2023.                                           Chang, K. C., Huang, F., Cheng, R., and Li, Y. Can LLM
+                                                                        already serve as A database interface? A big bench for
+Fan, J., Gu, Z., Zhang, S., Zhang, Y., Chen, Z., Cao, L., Li,           large-scale database grounded text-to-sqls. In NeurIPS,
+  G., Madden, S., Du, X., and Tang, N. Combining small                  2023c.
+  language models and large language models for zero-
+  shot NL2SQL. Proc. VLDB Endow., 17(11):2750–2763,                   Lin, X., Qi, Y., Zhu, Y., Palpanas, T., Chai, C., Tang, N.,
+  2024.                                                                 and Luo, Y. Lead: Iterative data selection for efficient
+                                                                        llm instruction tuning, 2025. URL https://arxiv.
+Gao, D., Wang, H., Li, Y., Sun, X., Qian, Y., Ding, B.,                 org/abs/2505.07437.
+  and Zhou, J. Text-to-sql empowered by large language
+  models: A benchmark evaluation. Proc. VLDB Endow.,                  Liu, B., Li, X., Zhang, J., Wang, J., He, T., Hong, S., Liu, H.,
+ 17(5):1132–1145, 2024a.                                                Zhang, S., Song, K., Zhu, K., Cheng, Y., Wang, S., Wang,
+                                                                        X., Luo, Y., Jin, H., Zhang, P., Liu, O., Chen, J., Zhang,
+Gao, Y., Liu, Y., Li, X., Shi, X., Zhu, Y., Wang, Y., Li, S.,           H., Yu, Z., Shi, H., Li, B., Wu, D., Teng, F., Jia, X., Xu,
+  Li, W., Hong, Y., Luo, Z., Gao, J., Mou, L., and Li, Y.               J., Xiang, J., Lin, Y., Liu, T., Liu, T., Su, Y., Sun, H.,
+  Xiyan-sql: A multi-generator ensemble framework for                   Berseth, G., Nie, J., Foster, I., Ward, L. T., Wu, Q., Gu,
+  text-to-sql. CoRR, abs/2411.08599, 2024b.                             Y., Zhuge, M., Tang, X., Wang, H., You, J., Wang, C., Pei,
+                                                                        J., Yang, Q., Qi, X., and Wu, C. Advances and challenges
+Gu, Z., Fan, J., Tang, N., Cao, L., Jia, B., Madden, S., and            in foundation agents: From brain-inspired intelligence
+  Du, X. Few-shot text-to-sql translation using structure               to evolutionary, collaborative, and safe systems. CoRR,
+  and content prompt learning. Proc. ACM Manag. Data, 1                 abs/2504.01990, 2025a.
+ (2):147:1–147:28, 2023.
+                                                                      Liu, X., Shen, S., Li, B., Ma, P., Jiang, R., Luo, Y., Zhang,
+Hao, S., Gu, Y., Ma, H., Hong, J. J., Wang, Z., Wang,                   Y., Fan, J., Li, G., and Tang, N. A survey of NL2SQL
+  D. Z., and Hu, Z. Reasoning with language model is                    with large language models: Where are we, and where
+  planning with world model. In EMNLP, pp. 8154–8173.                   are we going? CoRR, abs/2408.05109, 2024.
+  Association for Computational Linguistics, 2023.
+                                                                      Liu, X., Shen, S., Li, B., Tang, N., and Luo, Y. Nl2sql-bugs:
+Kocsis, L. and Szepesvári, C. Bandit based monte-carlo                 A benchmark for detecting semantic errors in NL2SQL
+  planning. In ECML, volume 4212 of Lecture Notes in                    translation. CoRR, abs/2503.11984, 2025b.
+  Computer Science, pp. 282–293. Springer, 2006.
+                                                                      Luo, T., Huang, C., Shen, L., Li, B., Shen, S., Zeng, W.,
+Lee, D., Park, C., Kim, J., and Park, H. MCS-SQL: lever-                Tang, N., and Luo, Y. nvbench 2.0: A benchmark for
+  aging multiple prompts and multiple-choice selection for              natural language to visualization under ambiguity. CoRR,
+  text-to-sql generation. In COLING, pp. 337–353. Asso-                 abs/2503.12880, 2025.
+  ciation for Computational Linguistics, 2025.
+                                                                      Luo, Y., Qin, X., Tang, N., and Li, G. Deepeye: Towards au-
+Li, B., Luo, Y., Chai, C., Li, G., and Tang, N. The dawn of             tomatic data visualization. In ICDE, pp. 101–112. IEEE
+  natural language to SQL: are we fully ready? [experiment,             Computer Society, 2018a.
+  analysis & benchmark ]. Proc. VLDB Endow., 17(11):                  Luo, Y., Qin, X., Tang, N., Li, G., and Wang, X. Deepeye:
+  3318–3331, 2024a.                                                     Creating good data visualizations by keyword search. In
+Li, H., Zhang, J., Li, C., and Chen, H. RESDSQL: decou-                 SIGMOD Conference, pp. 1733–1736. ACM, 2018b.
+  pling schema linking and skeleton parsing for text-to-sql.          Luo, Y., Tang, N., Li, G., Chai, C., Li, W., and Qin, X.
+  In AAAI, pp. 13067–13075. AAAI Press, 2023a.                          Synthesizing natural language to visualization (NL2VIS)
+Li, H., Zhang, J., Liu, H., Fan, J., Zhang, X., Zhu, J., Wei,           benchmarks from NL2SQL benchmarks. In SIGMOD
+  R., Pan, H., Li, C., and Chen, H. Codes: Towards building             Conference, pp. 1235–1247. ACM, 2021.
+  open-source language models for text-to-sql. Proc. ACM              Luo, Y., Qin, X., Chai, C., Tang, N., Li, G., and Li, W.
+  Manag. Data, 2(3):127, 2024b.                                         Steerable self-driving data visualization. IEEE Trans.
+                                                                        Knowl. Data Eng., 34(1):475–490, 2022a.
+Li, J., Hui, B., Cheng, R., Qin, B., Ma, C., Huo, N., Huang,
+  F., Du, W., Si, L., and Li, Y. Graphix-t5: Mixing pre-              Luo, Y., Tang, N., Li, G., Tang, J., Chai, C., and Qin, X.
+  trained transformers with graph-aware layers for text-to-             Natural language to visualization by neural machine trans-
+  sql parsing. In AAAI, pp. 13076–13084. AAAI Press,                    lation. IEEE Trans. Vis. Comput. Graph., 28(1):217–226,
+  2023b.                                                                2022b.
+
+                                                                 10
+                              Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+Luo, Y., Zhou, Y., Tang, N., Li, G., Chai, C., and Shen, L.             Wang, B., Ren, C., Yang, J., Liang, X., Bai, J., Chai, L., Yan,
+  Learned data-aware image representations of line charts                Z., Zhang, Q., Yin, D., Sun, X., and Li, Z. MAC-SQL: A
+  for similarity search. Proc. ACM Manag. Data, 1(1):                    multi-agent collaborative framework for text-to-sql. In
+  88:1–88:29, 2023.                                                      COLING, pp. 540–557. Association for Computational
+                                                                         Linguistics, 2025.
+Ma, P., Li, B., Jiang, R., Fan, J., Tang, N., and Luo, Y.
+ A plug-and-play natural language rewriter for natural                  Wei, J., Wang, X., Schuurmans, D., Bosma, M., Ichter, B.,
+ language to SQL. CoRR, abs/2412.17068, 2024.                            Xia, F., Chi, E. H., Le, Q. V., and Zhou, D. Chain-of-
+                                                                         thought prompting elicits reasoning in large language
+Maamari, K., Abubaker, F., Jaroslawicz, D., and Mhedhbi,
+                                                                         models. In NeurIPS, 2022.
+ A. The death of schema linking? text-to-sql in the age of
+ well-reasoned language models. CoRR, abs/2408.07702,                   Wu, Y., Shi, J., Wu, B., Zhang, J., Lin, X., Tang, N., and
+ 2024.                                                                   Luo, Y. Concise reasoning, big gains: Pruning long
+                                                                         reasoning trace with difficulty-aware prompting, 2025.
+Pourreza, M. and Rafiei, D. DIN-SQL: decomposed in-
+                                                                         URL https://arxiv.org/abs/2505.19716.
+  context learning of text-to-sql with self-correction. In
+  NeurIPS, 2023.                                                        Xie, Y., Luo, Y., Li, G., and Tang, N. Haichart: Human and
+                                                                          AI paired visualization system. Proc. VLDB Endow., 17
+Pourreza, M., Li, H., Sun, R., Chung, Y., Talaei, S., Kakkar,
+                                                                          (11):3178–3191, 2024.
+  G. T., Gan, Y., Saberi, A., Ozcan, F., and Arik, S. Ö.
+  CHASE-SQL: multi-path reasoning and preference opti-                  Yang, A., Yang, B., Zhang, B., and et al. Qwen2.5 technical
+  mized candidate selection in text-to-sql. In ICLR. Open-                report. CoRR, abs/2412.15115, 2024.
+  Review.net, 2025.
+                                                                        Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T., Cao, Y.,
+Qi, Z., Ma, M., Xu, J., Zhang, L. L., Yang, F., and Yang, M.              and Narasimhan, K. Tree of thoughts: Deliberate problem
+  Mutual reasoning makes smaller llms stronger problem-                   solving with large language models. In NeurIPS, 2023.
+  solvers. CoRR, abs/2408.06195, 2024.
+                                                                        Yu, T., Zhang, R., Yang, K., Yasunaga, M., Wang, D., Li, Z.,
+Qiu, J., Lu, Y., Zeng, Y., Guo, J., Geng, J., Wang, H., Huang,            Ma, J., Li, I., Yao, Q., Roman, S., Zhang, Z., and Radev,
+  K., Wu, Y., and Wang, M. Treebon: Enhancing inference-                  D. R. Spider: A large-scale human-labeled dataset for
+  time alignment with speculative tree-search and best-of-n               complex and cross-domain semantic parsing and text-to-
+  sampling. CoRR, abs/2410.16033, 2024.                                   sql task. In EMNLP, pp. 3911–3921. Association for
+Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S.,                Computational Linguistics, 2018.
+  Matena, M., Zhou, Y., Li, W., and Liu, P. J. Exploring the            Zelikman, E., Wu, Y., Mu, J., and Goodman, N. D. Star:
+  limits of transfer learning with a unified text-to-text trans-          Bootstrapping reasoning with reasoning. In NeurIPS,
+  former. J. Mach. Learn. Res., 21:140:1–140:67, 2020.                    2022.
+Scholak, T., Schucher, N., and Bahdanau, D. PICARD:
+                                                                        Zhang, D., Zhoubian, S., Hu, Z., Yue, Y., Dong, Y., and
+  parsing incrementally for constrained auto-regressive de-
+                                                                          Tang, J. Rest-mcts*: LLM self-training via process re-
+  coding from language models. In EMNLP (1), pp. 9895–
+                                                                          ward guided tree search. In NeurIPS, 2024a.
+  9901. Association for Computational Linguistics, 2021.
+                                                                        Zhang, J., Zhao, C., Zhao, Y., Yu, Z., He, M., and Fan, J.
+Snell, C., Lee, J., Xu, K., and Kumar, A. Scaling LLM
+                                                                          Mobileexperts: A dynamic tool-enabled agent team in
+  test-time compute optimally can be more effective than
+                                                                          mobile devices. CoRR, abs/2407.03913, 2024b.
+  scaling model parameters. CoRR, abs/2408.03314, 2024.
+                                                                        Zhang, J., Xiang, J., Yu, Z., Teng, F., Chen, X., Chen, J.,
+Talaei, S., Pourreza, M., Chang, Y., Mirhoseini, A., and
+                                                                          Zhuge, M., Cheng, X., Hong, S., Wang, J., Zheng, B.,
+  Saberi, A. CHESS: contextual harnessing for efficient
+                                                                          Liu, B., Luo, Y., and Wu, C. Aflow: Automating agentic
+  SQL synthesis. CoRR, abs/2405.16755, 2024.
+                                                                          workflow generation. In ICLR. OpenReview.net, 2025.
+Teng, F., Yu, Z., Shi, Q., Zhang, J., Wu, C., and Luo, Y.
+                                                                        Zhu, Y., Du, S., Li, B., Luo, Y., and Tang, N. Are large
+  Atom of thoughts for markov LLM test-time scaling.
+                                                                          language models good statisticians? In NeurIPS, 2024.
+  CoRR, abs/2502.12018, 2025.
+Uesato, J., Kushman, N., Kumar, R., Song, H. F., Siegel,                Zhu, Y., Jiang, R., Li, B., Tang, N., and Luo, Y. Elliesql:
+  N. Y., Wang, L., Creswell, A., Irving, G., and Higgins, I.              Cost-efficient text-to-sql with complexity-aware routing.
+  Solving math word problems with process- and outcome-                   CoRR, abs/2503.22402, 2025.
+  based feedback. CoRR, abs/2211.14275, 2022.
+
+                                                                   11
+                             Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+A. Appendix
+A.1. Alpha-SQL Algorithm
+The Alpha-SQL algorithm, as outlined in Algorithm 1, operates in multiple phases: Selection, Expansion, Simulation, and
+Backpropagation. Given a user query q and the corresponding database schema D, the algorithm starts by initializing an
+empty search tree Ψ = (V, E) with a root node v0 representing the initial state (lines 3-4). The process then iterates over
+Nrollout MCTS rollouts (line 6), where each rollout seeks to explore high-value reasoning paths in the search space.
+In the Selection phase (lines 7-12), starting from the root node, Alpha-SQL recursively traverses the search tree until an
+unexpanded node is reached. The next action a is selected based on the Upper Confidence Bound for Trees (UCT) formula,
+which balances exploration and exploitation by considering both the estimated reward and the visit counts of actions (line
+10). This process continues until a terminal node is found or all children of the node are expanded.
+In the Expansion phase (lines 13-23), valid next actions Avalid are determined based on the current node’s type. The
+algorithm generates new states by invoking our LLM-as-Action-Model to execute each action, creating new child nodes
+in the search tree (lines 15-21). The expansion process introduces new reasoning paths, enriching the search space for
+subsequent rollouts.
+The Simulation phase (lines 24-30) performs rollouts by randomly selecting unexplored child nodes and executing the
+corresponding actions. This phase continues until a terminal node is reached, at which point the final SQL query is extracted
+from the trajectory.
+Finally, the Backpropagation phase (lines 32-40) updates the values of nodes along the path from the terminal node back
+to the root. The reward is computed by sampling multiple SQL queries and calculating their self-consistency scores based
+on their execution results. The values of nodes N (u) and Q(u, au ) are updated according to the reward r to guide future
+searches.
+At the end of the rollouts, the algorithm selects the SQL query with the highest self-consistency from the set of candidate
+queries generated during the search, as indicated by line 43.
+This procedure enables Alpha-SQL to efficiently explore the search space of SQL queries, balancing exploration with
+accuracy and providing a scalable, fine-tuning-free solution to zero-shot Text-to-SQL tasks.
+
+
+
+
+                                                             12
+                           Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+
+Algorithm 1 Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+ 1: Input: Question q, Database Schema D, LLM M , Number of rollouts Nrollout
+ 2: Output: SQL query y
+ 3: Initialize an empty search tree Ψ = (V, E) with root node v0
+ 4: Initialize a root node v0 ∈ V with (q, D)
+ 5: T ← ∅
+ 6: for i = 1 to Nrollout do
+ 7:    // Selection Phase
+ 8:    v ← v0
+ 9:    while v is not terminal and v is fully expanded pdo
+10:       a ← argmaxa∈A(v) {Q(v, a)/N (v, a) + c ln N (v)/N (v, a)}
+11:       v ← child of v reached by action a
+12:    end while
+13:    // Expansion Phase
+14:    if v is not terminal then
+15:       Avalid ← GetValidActions(v) from Table 1
+16:       for a ∈ Avalid do
+17:          for j = 1 to Nexpansion do
+18:             vnew ← M(q, D, Actions(v0 , . . . , v), P rompt(a))
+19:             Add vnew as child of v in Ψ
+20:          end for
+21:       end for
+22:       v ← Random unexplored child of v
+23:    end if
+24:    // Simulation Phase
+25:    while v is not terminal do
+26:       Avalid ← GetValidActions(v)
+27:       Expand v with Avalid and ramdomly select action a
+28:       vnew ← M(q, D, Actions(v0 , . . . , v), P rompt(a))
+29:       v ← vnext
+30:    end while
+31:    Extract final SQL y from v
+32:    // Backpropagation Phase
+33:    Sample Nreward SQL queries {y1 , ..., yNreward } with temperature Treward
+                                 1[Execute(y, D) = Execute(yi , D)]
+                 1
+                      PNreward
+34:    r ← Nreward       i=1
+35:    τ ← the path from v0 to v
+36:    for each node u in τ do
+37:       N (u) ← N (u) + 1
+38:       Q(u, au ) ← Q(u, au ) + r where au is the action taken at u
+39:       N (u, au ) ← N (u, au ) + 1
+40:    end for
+41:    T ← T ∪ {τ }
+42: end for
+43: return argmaxy∈Y {Self-consistency(y)} where Y are unique SQLs from T
+
+
+
+
+                                                         13
+                            Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+A.2. Prompt Template for Actions
+In this section, we provided the prompt templates for the actions defined in Section 4.1.
+
+   Rephrase Question Action Prompt
+
+   You are an AI assistant to help me rephrase questions by splitting the question context into conditions. In your
+   rephrased question, remember to fully express the information in the original question.
+
+   Example 1:
+   Original Question: Name movie titles released in year 1945. Sort the listing by the descending order of movie
+   popularity.
+   Hint: released in the year 1945 refers to movie release year = 1945;
+   Rephrased Question: Given a list of conditions, please answer the question. Condition 1: Movies are released in the
+   year 1945. Condition 2: Movies are sorted by the descending order of movie popularity. Condition 3: Return the
+   movie titles. Question: What are the movie titles released in the year 1945, sorted by the descending order of movie
+   popularity?
+
+   Example 2:
+   Original Question: How many office supply orders were made by Cindy Stewart in the south superstore?
+   Hint: office supply refers to Category = ‘Office Supplies’
+   Rephrased Question: Given a list of conditions, please answer the question. Condition 1: Orders are made by Cindy
+   Stewart. Condition 2: Orders are office supplies, refer to Category = ‘Office Supplies’. Condition 3: Return the
+   number of orders. Question: How many office supply orders were made by Cindy Stewart in the south superstore?
+
+   Example 3:
+   Original Question: Tell the number of fights landed earlier on Miami Airport on 2018/8/12.
+   Hint: landed on refers to DEST; landed earlier refers to ARR DELAY < 0; Miami Airport refers to DEST = ‘MIA’;
+   on 2018/8/12 refers to FL DATE = ‘2018/8/12’;
+   Rephrased Question: Given a list of conditions, please answer the question. Condition 1: Flights landed on Miami
+   Airport on 2018/8/12, refer to DEST = ‘MIA’ and FL DATE = ‘2018/8/12’. Condition 2: Flights landed earlier,
+   refer to ARR DELAY < 0. Condition 3: Return the number of fights. Question: How many fights landed earlier on
+   Miami Airport on 2018/8/12?
+
+   Answer the following question:
+   Original Question: {QUESTION}
+   Hint: {HINT}
+   Rephrased Question:
+
+
+                                        Figure 6. Question Rephrasing Action Prompt.
+
+
+
+
+                                                            14
+                         Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+
+Schema Selection Action Prompt
+
+You are an expert and very smart data analyst.
+
+Your task is to examine the provided database schema, understand the posed question, and use the hint to pinpoint
+the specific columns within tables that are essential for crafting a SQL query to answer the question.
+
+The schema offers an in-depth description of the database’s architecture, detailing tables, columns, primary keys,
+foreign keys, and any pertinent information regarding relationships or constraints. Special attention should be given
+to the examples listed beside each column, as they directly hint at which columns are relevant to our query.
+
+For key phrases mentioned in the question, we have provided the most similar values within the columns denoted by
+“– Value Examples” in front of the corresponding column names. This is a critical hint to identify the columns that
+will be used in the SQL query.
+
+The hint aims to direct your focus towards the specific elements of the database schema that are crucial for answering
+the question effectively.
+
+Task: Based on the database schema, question, and hint provided, your task is to identify all and only the columns
+that are essential for crafting a SQL query to answer the question. For each of the selected columns, explain why
+exactly it is necessary for answering the question. Your reasoning should be concise and clear, demonstrating a
+logical connection between the columns and the question asked.
+
+Please respond with a JSON object structured as follows:
+‘‘‘json
+{ “chain of thought reasoning”: “Your reasoning for selecting the columns, be concise and clear.”, “table name1”:
+[“column1”, “column2”, ...], “table name2”: [“column1”, “column2”, ...], ... }
+‘‘‘
+Make sure your response includes the table names as keys, each associated with a list of column names that are
+necessary for writing a SQL query to answer the question. For each aspect of the question, provide a clear and
+concise explanation of your reasoning behind selecting the columns. Take a deep breath and think logically. If you
+do the task correctly, I will give you 1 million dollars.
+Database Schema Overview: {SCHEMA CONTEXT}
+Question: {QUESTION}
+Hint: {HINT}
+Only output a json (starting with ‘‘‘json and ending with ‘‘‘) as your response.
+
+
+                                      Figure 7. Schema Selection Action Prompt.
+
+
+
+
+                                                         15
+                        Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+
+Column Value Identification Action Prompt
+
+You are an AI assistant to help me identify the potential column values (if needed to be used in the SQL query) that
+are essential for answering the question.
+Here is an example:
+Database Schema:
+CREATE TABLE generalinfo
+(
+id restaurant INTEGER not null primary key,
+food type TEXT null, – Value Examples: ‘thai’ | Column Description: the food type
+city TEXT null, – Column Description: the city where the restaurant is located in
+);
+CREATE TABLE location
+(
+id restaurant INTEGER not null primary key,
+street name TEXT null, – Value Examples: ‘ave’, ‘san pablo ave’, ‘pablo ave’ | Column Description: the street
+name of the restaurant
+city TEXT null, – Column Description: the city where the restaurant is located in
+foreign key (id restaurant) references generalinfo (id restaurant) on update cascade on delete cascade
+);
+Question:
+How many Thai restaurants can be found in San Pablo Ave, Albany?
+Hint:
+Thai restaurant refers to food type = ‘thai’; San Pablo Ave Albany refers to street name = ‘san pablo ave’ AND
+T1.city = ‘albany’
+Answer:
+Since the restaurants are located in Albany, based on the schema information and the hint, I need to use ‘loca-
+tion’.‘street name’ = ‘san pablo ave’ AND ‘generalinfo’.‘city’ = ‘albany’.
+**************************
+Now, answer the real question, and you need to follow the answer style of the above examples (answer in two
+sentences).
+Database Schema: {SCHEMA CONTEXT}
+Question: {QUESTION}
+Hint: {HINT}
+Answer:
+
+
+                                 Figure 8. Column Value Identification Action Prompt.
+
+
+
+
+                                                         16
+                        Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+
+Column Function Identification Action Prompt
+
+You are an AI assistant to help me identify the potential column functions (if needed to be used in the SQL query)
+that are essential for answering the question.
+Here is an example:
+Database Schema:
+CREATE TABLE businesses
+(
+‘business id’ INTEGER NOT NULL,
+‘name’ TEXT NOT NULL, – Column Description: the name of the eatery
+PRIMARY KEY (‘business id’)
+);
+CREATE TABLE inspections
+(
+‘business id’ INTEGER NOT NULL, – Column Description: the unique id of the business
+‘score’ INTEGER DEFAULT NULL, – Column Description: the inspection score
+‘date’ TEXT NOT NULL, – Value Examples: ‘2014-01-24’
+FOREIGN KEY (‘business id’) REFERENCES ‘businesses’ (‘business id’)
+);
+Question: What are the names of the businesses that passed with conditions in May 2012?
+Hint: name of business refers to dba name; passed with conditions refers to results = ‘Pass w/ Conditions’; in May
+2012 refers to inspection date like ‘2012-05%’
+Answer: Since the businesses passed with conditions in May 2012, I should consider a date-related function to
+filter the ‘inspections’.‘date’ column. I find that column is of type TEXT, so I can use the strftime(‘%Y-%m’,
+‘inspections’.‘date’) = ‘2012-05’ to filter the date.
+**************************
+Now, answer the real question, and you need to follow the answer style of the above examples (answer in two
+sentences).
+Database Schema: {SCHEMA CONTEXT}
+Question: {QUESTION}
+Hint: {HINT}
+Answer:
+
+
+                               Figure 9. Column Function Identification Action Prompt.
+
+
+
+
+                                                         17
+                        Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+SQL Generation Action Prompt
+
+You are an experienced database expert. Now you need to generate a SQL query given the database information, a
+question and some additional information.
+The database structure is defined by the following table schemas (comments after ‘–’ provide additional column
+descriptions). Note that the “Value Examples” are actual values from the column. Some column might contain the
+values that are directly related to the question. Use it to help you justify which columns to use.
+Given the table schema information description and the ‘Question’. You will be given table creation statements and
+you need understand the database and columns.
+You will be using a way called “recursive divide-and-conquer approach to SQL query generation from natural
+language”.
+Here is a high level description of the steps.
+1. **Divide (Decompose Sub-question with Pseudo SQL):** The complex natural language question is recursively
+broken down into simpler sub-questions. Each sub-question targets a specific piece of information or logic required
+for the final SQL query.
+2. **Conquer (Real SQL for sub-questions):** For each sub-question (and the main question initially), a “pseudo-
+SQL” fragment is formulated. This pseudo-SQL represents the intended SQL logic but might have placeholders for
+answers to the decomposed sub-questions.
+3. **Combine (Reassemble):** Once all sub-questions are resolved and their corresponding SQL fragments are
+generated, the process reverses. The SQL fragments are recursively combined by replacing the placeholders in the
+pseudo-SQL with the actual generated SQL from the lower levels.
+4. **Final Output:** This bottom-up assembly culminates in the complete and correct SQL query that answers the
+original complex question.
+Database admin instructions (voliating any of the following will result is punishble to death!):
+1. **SELECT Clause:**
+- Only select columns mentioned in the user’s question.
+- Avoid unnecessary columns or values.
+2. **Aggregation (MAX/MIN):**
+- Always perform JOINs before using MAX() or MIN().
+3. **ORDER BY with Distinct Values:**
+- Use ‘GROUP BY column’ before ‘ORDER BY column ASC|DESC’ to ensure distinct values.
+4. **Handling NULLs:**
+- If a column may contain NULL values, use ‘JOIN’ or ‘WHERE <column> IS NOT NULL’.
+Repeating the question and hint, and generating the SQL with Recursive Divide-and-Conquer, and finally try to
+simplify the SQL query using ‘INNER JOIN’ over nested ‘SELECT’ statements IF POSSIBLE.
+Please respond with a JSON object structured as follows:
+‘‘‘json
+{ “chain of thought reasoning”: “Your detailed reasoning for the SQL query generation, with Recursive Divide-and-
+Conquer approach.”,
+“sql query”: “The final SQL query that answers the question.”
+} ‘‘‘
+**************************
+Table creation statements: {SCHEMA CONTEXT}
+**************************
+Question: {QUESTION}
+Hint: {HINT}
+**************************
+Only output a json (starting with ‘‘‘json and ending with ‘‘‘) as your response.
+
+
+                                     Figure 10. SQL Generation Action Prompt.
+
+
+
+
+                                                        18
+                         Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+
+
+
+SQL Revision Action Prompt
+
+**Task Description:**
+You are an SQL database expert tasked with correcting a SQL query. A previous attempt to run a query did not yield
+ the correct results, either due to errors in execution or because the result returned was empty or unexpected. Your
+ role is to analyze the error based on the provided database schema and the details of the failed execution, and then
+ provide a corrected version of the SQL query.
+**Procedure:**
+1. Review Database Schema:
+- Examine the table creation statements to understand the database structure.
+ 2. Analyze Query Requirements:
+- Original Question: Consider what information the query is supposed to retrieve.
+- Hint: Use the provided hints to understand the relationships and conditions relevant to the query.
+- Executed SQL Query: Review the SQL query that was previously executed and led to an error or incorrect result.
+- Execution Result: Analyze the outcome of the executed query to identify why it failed (e.g., syntax errors, incorrect
+ column references, logical mistakes).
+ 3. Correct the Query:
+- Modify the SQL query to address the identified issues, ensuring it correctly fetches the requested data according to
+ the database schema and query requirements.
+
+Based on the question, table schemas, the previous query, and the execution result, analyze the result following the
+procedure, and try to fix the query. You cannot modify the database schema or the question, just output the corrected
+query.
+Please respond with a JSON object structured as follows:
+‘‘‘json
+{
+“chain of thought reasoning”: “Your detailed reasoning for the SQL query revision.”,
+“sql query”: “The final SQL query that answers the question.”,
+}
+‘‘‘
+**************************
+Table creation statements: {SCHEMA CONTEXT}
+**************************
+Question: {QUESTION}
+Hint: {HINT}
+**************************
+Only output a json (starting with ‘‘‘json and ending with ‘‘‘) as your response.
+
+
+                                        Figure 11. SQL Revision Action Prompt.
+
+
+
+
+                                                          19
+                            Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+A.3. Prompt Template for Question Keywords Extraction
+In this section we provided the prompt template for the question keywords extraction in Section 4.3.
+
+   Question Keywords Extraction Prompt
+
+   Objective: Analyze the given question and hint to identify and extract keywords, keyphrases, and named entities.
+   These elements are crucial for understanding the core components of the inquiry and the guidance provided. This
+   process involves recognizing and isolating significant terms and phrases that could be instrumental in formulating
+   searches or queries related to the posed question.
+
+    Instructions:
+   - Read the Question Carefully: Understand the primary focus and specific details of the question. Look for any
+    named entities (such as organizations, locations, etc.), technical terms, and other phrases that encapsulate important
+    aspects of the inquiry.
+   - Analyze the Hint: The hint is designed to direct attention toward certain elements relevant to answering the question.
+    Extract any keywords, phrases, or named entities that could provide further clarity or direction in formulating an
+    answer.
+   - List Keyphrases and Entities: Combine your findings from both the question and the hint into a single Python list.
+   This list should contain:
+   – Keywords: Single words that capture essential aspects of the question or hint.
+   – Keyphrases: Short phrases or named entities that represent specific concepts, locations, organizations, or other
+    significant details.
+
+   Ensure to maintain the original phrasing or terminology used in the question and hint.
+
+   Example 1:
+   Question: “What is the annual revenue of Acme Corp in the United States for 2022?”
+   Hint: “Focus on financial reports and U.S. market performance for the fiscal year 2022.”
+   [“annual revenue”, “Acme Corp”, “United States”, “2022”, “financial reports”, “U.S. market performance”, “fiscal
+   year”]
+
+   Example 2:
+   Question: “In the Winter and Summer Olympics of 1988, which game has the most number of competitors? Find
+   the difference of the number of competitors between the two games.”
+   Hint: “the most number of competitors refer to MAX(COUNT(person id)); SUBTRACT(COUNT(person id where
+   games name = ‘1988 Summer’), COUNT(person id where games name = ‘1988 Winter’));”
+   [“Winter Olympics”, “Summer Olympics”, “1988”, “1988 Summer”, “Summer”, “1988 Winter”, “Winter”, “number
+   of competitors”, “difference”, “MAX(COUNT(person id))”, “games name”, “person id”]
+
+   Example 3:
+   Question: “How many Men’s 200 Metres Freestyle events did Ian James Thorpe compete in?”
+   Hint: “Men’s 200 Metres Freestyle events refer to event name = ‘Swimming Men”s 200 metres Freestyle’; events
+   compete in refers to event id;”
+   [“Swimming Men’s 200 metres Freestyle”, “Ian James Thorpe”, “Ian”, “James”, “Thorpe”, “compete in”,
+   “event name”, “event id”]
+
+   Task: Given the following question and hint, identify and list all relevant keywords, keyphrases, and named entities.
+   Question: {QUESTION}
+   Hint: {HINT}
+   Please provide your findings as a Python list, capturing the essence of both the question and hint through the
+   identified terms and phrases. Only output the Python list, no explanations needed.
+
+
+                                       Figure 12. Question Keywords Extraction Prompt.
+
+
+
+                                                             20
+                            Alpha-SQL: Zero-Shot Text-to-SQL using Monte Carlo Tree Search
+
+A.4. Prompt Template for Baseline LLMs
+In this section we provided the prompt template for the directly calling baseline LLMs in Section 5.4
+
+   Baseline Text-to-SQL Prompt
+
+   You are an experienced database expert. Now you need to generate a SQL query given the database information, a
+   question and some additional information.
+
+   The database structure is defined by the following table schemas (comments after ‘–’ provide additional column
+   descriptions). Note that the “Value Examples” are actual values from the column. Some column might contain the
+   values that are directly related to the question. Use it to help you justify which columns to use.
+
+   Given the table schema information description, the ‘Question’ and ‘Hint’, you need to generate a SQL query that
+   answers the question.
+   Please respond the final sql query in the end of response.
+   **************************
+   Table creation statements:
+   {SCHEMA CONTEXT}
+   **************************
+   Question:
+   {QUESTION}
+   Hint:
+   {HINT}
+   **************************
+   Output Format:
+   <think>
+   Your thinking process.
+   </think>
+   <sql>
+   The final SQL query.
+   </sql>
+
+
+                                          Figure 13. Baseline Text-to-SQL Prompt.
+
+
+
+
+                                                            21
+

@@ -1,0 +1,45 @@
+\documentclass{article}
+
+% Official NeurIPS 2025 style in non-anonymous preprint mode.
+\usepackage[preprint]{neurips_2025}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{microtype}
+
+% Replace these two values before submission.
+\newcommand{\studentname}{Dongx Xia}
+\newcommand{\studentid}{50062682}
+
+\title{Schema-Aware Neural Selection of Candidate SQL Queries}
+
+\author{%
+  \studentname\\
+  Student ID: \studentid
+}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Text-to-SQL systems often produce several executable but semantically different queries. I propose a supervised, schema-aware selector that ranks a fixed candidate set using the question, schema, candidate SQL, schema-linking output, and execution feedback. The project will test whether schema evidence improves selection beyond execution self-consistency and SQL-only ranking on unseen databases.
+\end{abstract}
+
+\paragraph{Motivation and research questions.}
+Execution self-consistency chooses a query from the largest cluster of identical results, assuming that the most frequent result is correct. Correlated generation errors can instead make a wrong interpretation the majority. In a pilot BIRD pool, self-consistency obtains 62\% execution accuracy (EX), while oracle selection reaches 70\%. I ask: (1) Can a learned selector close this gap? (2) Do candidate-used tables, columns, and joins add information beyond SQL text and execution? (3) Does agreement with a fixed Schema Linker help on unseen schemas? (4) Which of pointwise, pairwise, and groupwise training transfers best across databases?
+
+\paragraph{Hypotheses.}
+\textbf{H1:} Pairwise ranking will outperform independent correctness classification because deployment requires relative selection. \textbf{H2:} Candidate-level schema alignment will improve EX over an SQL-plus-execution model. \textbf{H3:} Database-disjoint validation and confidence gating will reduce harmful cross-database score shifts. Failure to beat SQL-plus-execution baselines across seeds and unseen databases will falsify the schema-aware hypothesis.
+
+\paragraph{Method.}
+For each candidate, a compact cross-encoder will represent the question--SQL--schema interaction. Its representation will be combined with SQL structure, candidate-used tables and columns, overlap with linked elements, foreign-key connectivity, join completeness, execution success, result shape, and result-cluster size. Same-question training pairs contain an execution-equivalent positive $s^+$ and a non-equivalent $s^-$. RankNet minimizes $-\log\sigma(f(q,s^+)-f(q,s^-))$, with extra weight for executable hard negatives involving wrong joins, columns, predicates, aggregation, or ordering. Gold SQL will be tested only as a separately reported train-only augmentation because canonical formatting may create a shortcut. At inference, a validation-calibrated residual or confidence gate will retain self-consistency unless neural evidence is strong.
+
+\paragraph{Evaluation and analysis.}
+Experiments will use BIRD with databases kept disjoint across training, validation, and test. All models receive the same candidate pool, and test gold SQL is never injected or used for tuning. Baselines are self-consistency, logistic regression, SQL-only ranking, and SQL-plus-execution ranking. I will report EX, oracle EX, solvable-question selection accuracy, and gap closure $(\mathrm{EX}_{m}-\mathrm{EX}_{b})/(\mathrm{EX}_{o}-\mathrm{EX}_{b})$ over at least three seeds. Ablations remove linked-schema agreement, candidate-used schema, join features, execution feedback, and gating. Error analysis will measure correct versus harmful selection changes by failure type.
+
+The project is feasible with available execution labeling, feature extraction, and GPU training; cross-schema transfer remains ambitious. Expected outcomes are an independent selector, controlled evidence separating pool quality from ranking quality, and a diagnosis of when schema evidence helps. Success requires significant gains over self-consistency and SQL-plus-execution ranking.
+
+\end{document}

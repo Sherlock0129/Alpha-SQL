@@ -8,7 +8,7 @@ import pickle
 from concurrent.futures import ProcessPoolExecutor
 from tqdm import tqdm
 import yaml
-from alphasql.llm_call.openai_llm import DEFAULT_COST_RECORDER
+from alphasql.llm_call.openai_llm import DEFAULT_COST_RECORDER, reset_request_counter
 import json
 import random
 from dotenv import load_dotenv  
@@ -47,6 +47,14 @@ class MCTSRunner:
         random.seed(self.config.random_seed)
         
     def run_one_task(self, task: Task) -> str:
+        # Worker processes are reused across tasks. Keep the configured request
+        # ceiling as a per-question safety bound instead of exhausting it across
+        # the first few questions handled by each worker.
+        reset_request_counter()
+        # Gold SQL is retained in preprocessed tasks for offline evaluation only.
+        # Remove it before candidate search so future actions cannot accidentally
+        # turn candidate-pool construction into label leakage.
+        task = task.model_copy(update={"sql": None})
         mcts_solver = MCTSSolver(
             db_root_dir=self.config.db_root_dir,
             task=task,

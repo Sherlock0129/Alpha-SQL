@@ -280,7 +280,6 @@ class Preprocessor:
             A dictionary with tuple of (table name, column name) as key, and a list of relevant values as value.
         """
         keywords = self.get_keywords_for_task(task)
-        print(keywords)
         # Step 1: Use keywords to query the LSH index to get the candidate values.
         lsh_candidate_values = []
         for keyword in keywords:
@@ -292,7 +291,6 @@ class Preprocessor:
                 n_gram=self.lsh_n_gram
             )
             lsh_candidate_values.extend(results)
-        print(lsh_candidate_values)
         # Step 2: Use edit distance to filter the candidate values.
         edit_similarity_candidate_values = self.filter_candidate_values_by_edit_similarity(lsh_candidate_values, self.edit_similarity_threshold)
         # Step 3: Use embedding similarity to filter the candidate values.
@@ -318,6 +316,28 @@ class Preprocessor:
             final_candidate_values[(table_name, column_name)] = values
         
         return final_candidate_values
+
+    def get_cached_relevant_values_for_task(
+        self, task: Task
+    ) -> Dict[Tuple[str, str], List[str]]:
+        """Checkpoint retrieval per question and isolate transient API failures."""
+        cache_dir = self.save_dir / "relevant_values"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / f"{task.question_id}.pkl"
+        if cache_path.exists():
+            with cache_path.open("rb") as handle:
+                return pickle.load(handle)
+        try:
+            values = self.get_relevant_values_for_task(task)
+        except Exception as error:
+            logger.warning(
+                f"Relevant-value retrieval failed for question {task.question_id}; "
+                f"continuing with no values: {error}"
+            )
+            values = {}
+        with cache_path.open("wb") as handle:
+            pickle.dump(values, handle)
+        return values
     
     def get_relevant_values_for_all_tasks(self) -> List[Dict[Tuple[str, str], List[str]]]:
         """
@@ -333,7 +353,7 @@ class Preprocessor:
         else:
             with ThreadPoolExecutor(max_workers=self.n_parallel_processes) as executor:
                 relevant_values_for_all_tasks = list(
-                tqdm(executor.map(self.get_relevant_values_for_task, self.tasks), 
+                tqdm(executor.map(self.get_cached_relevant_values_for_task, self.tasks),
                      total=len(self.tasks), 
                      desc="Getting relevant values for all tasks")
                 )
@@ -508,6 +528,7 @@ if __name__ == "__main__":
     parser.add_argument("--embedding_similarity_threshold", type=float, required=True, default=0.6)
     parser.add_argument("--n_parallel_processes", type=int, required=True, default=8)
     parser.add_argument("--max_dataset_samples", type=int, required=True, default=-1)
+    parser.add_argument("--data_split", choices=("train", "dev"), default="dev")
     args = parser.parse_args()
     
     preprocessor = Preprocessor(
@@ -521,7 +542,8 @@ if __name__ == "__main__":
         embedding_similarity_threshold=args.embedding_similarity_threshold,
         n_parallel_processes=args.n_parallel_processes,
         max_dataset_samples=args.max_dataset_samples,
-        save_root_dir=args.save_root_dir
+        save_root_dir=args.save_root_dir,
+        data_split=args.data_split,
     )
     preprocessor.preprocess_lsh_index()
     # gold_relevant_values_for_all_tasks = preprocessor.get_gold_relevant_values_for_all_tasks()

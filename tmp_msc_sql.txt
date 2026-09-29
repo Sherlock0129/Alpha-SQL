@@ -1,0 +1,991 @@
+                      MSc-SQL: Multi-Sample Critiquing Small Language Models For
+                                       Text-To-SQL Translation
+
+                              Satya Krishna Gorti, Ilan Gofman, Zhaoyan Liu, Jiapeng Wu,
+                            Noël Vouitsis, Guangwei Yu, Jesse C. Cresswell, Rasa Hosseinzadeh,
+                                                        Layer 6 AI
+                                     {satya, ilan, zhaoyan, paul, noel, guang, jesse, rasa}@layer6.ai
+
+
+
+
+                                      Abstract                               parency, and task adaptability, while presenting
+                                                                             privacy concerns around data being sent to an API.
+                   Text-to-SQL generation enables non-experts to
+                                                                             All of these limitations underscore the need for
+                   interact with databases via natural language.
+                   Recent advances rely on large closed-source               efficient, open-source alternatives capable of com-
+                   models like GPT-4 that present challenges in              petitive performance.
+                   accessibility, privacy, and latency. To address              The inherent complexity of text-to-SQL tasks
+                   these issues, we focus on developing small, ef-           has contributed to proposed solutions becoming
+                   ficient, and open-source text-to-SQL models.              increasingly expensive. For instance, recent re-
+                   We demonstrate the benefits of sampling mul-              search (Wang et al., 2023; Pourreza and Rafiei,
+                   tiple candidate SQL generations and propose               2024; Talaei et al., 2024) demonstrates that decom-
+                   our method, MSc-SQL, to critique them using
+                                                                             posing complex tasks into specialized sub-tasks –
+                   associated metadata. Our sample critiquing
+                   model evaluates multiple outputs simultane-               such as table prediction, SQL generation, and error
+                   ously, achieving state-of-the-art performance             correction – improves overall performance. How-
+                   compared to other open-source models while                ever, these composite approaches also increase the
+                   remaining competitive with larger models at a             number of function calls to the model, leading to
+                   much lower cost. Full code can be found at                latency issues, especially when relying on larger
+                   github.com/layer6ai-labs/msc-sql.                         models. This highlights the importance of devel-
+                                                                             oping smaller, task-specific models that maintain
+               1    Introduction
+                                                                             accuracy while being computationally efficient. Ef-
+               Text-to-SQL generation is a rapidly growing area of           forts such as DTS-SQL (Pourreza and Rafiei, 2024)
+               natural language processing with significant real-            and SFT CodeS-7B (Li et al., 2024a) are among
+               world applications. It enables non-expert users               the few that try to address this need.
+               to interact with databases using natural language                Our objective is to develop efficient methods for
+               queries, which are then automatically translated              text-to-SQL generation that succeed with small and
+               into SQL queries. This capability is widely appli-            open-source models. We demonstrate that smaller
+               cable across various domains, including business              language models (under 10B parameters) struggle
+               intelligence, customer service automation, and data           to match the performance of their larger closed-
+               analysis. For example, it facilitates automating the          source counterparts when relying solely on exist-
+               feature selection process in tabular data prediction          ing approaches, namely those that combine schema
+               tasks which often involves complex aggregation                linking with SQL generation. We then show that
+               queries over event histories. Furthermore, empow-             this gap can be closed by sampling and running
+               ering translation models with database query access           multiple SQL queries – either from the same model
+               will allow for automated agentic workflows.                   or from an ensemble of models of similar size –
+                  Recent advances in text-to-SQL generation have             and comparing the results. By limiting the number
+               primarily leveraged closed-source models like                 of samples to two or three, this strategy balances
+               GPT-4 (OpenAI, 2023) which, combined with ad-                 between improving generation quality and main-
+               vanced prompting techniques, have consistently                taining computational efficiency. Recent works
+               achieved state-of-the-art performance on bench-               on other natural language generation tasks (Brown
+               marks such as Spider (Yu et al., 2018) and BIRD               et al., 2024; Snell et al., 2024; Li et al., 2024b)
+               (Li et al., 2023b). However, the reliance on closed-          support the idea that increased test-time compute
+               source API-based models limits accessibility, trans-          can boost generation quality.
+                                                                        2145
+Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Association for Computational Linguistics: Human Language Technologies
+                                                        (Volume 1: Long Papers), pages 2145–2160
+                                         April 29 - May 4, 2025 ©2025 Association for Computational Linguistics
+   Sampling multiple SQL queries requires a way        sults. However, there remains a significant perfor-
+to judge the various candidates and then select the    mance gap compared to several of the aforemen-
+best one. Prior works on natural language gener-       tioned GPT-4-based models. Our method MSc-
+ation with Large Language Models (LLMs) have           SQL largely bridges this accuracy gap while re-
+employed techniques like training a ranker to eval-    maining efficient and open-source.
+uate the quality of generated samples (Li et al.,      Exploring Test-Time Computation. On general
+2022a), or using reward models to guide the selec-     LLM benchmarks, recent methods have sought
+tion process (Ouyang et al., 2022; Rafailov et al.,    to leverage additional test-time computation, such
+2023). However, in the more specialized context        as planning, reasoning and problem deliberation
+of text-to-SQL generation we propose a distinct ap-    to improve performance (Wei et al., 2022; Yao
+proach: training a sample-critiquing model that si-    et al., 2023b; Besta et al., 2024; Zelikman et al.,
+multaneously considers multiple generations, their     2024; Yao et al., 2023a). For example, Chain-of-
+corresponding execution results, and associated        Thought (CoT) prompting (Wei et al., 2022) forces
+metadata to determine which of the generated SQL       the model to spend more tokens “thinking” about
+queries should be returned. Compared to analogous      the problem before answering. Some methods have
+methods, our approach allows the model to better       also explored repeated sampling as a way of us-
+leverage comparative information and contextual        ing increased test-time computation to expand the
+cues. Our results show state-of-the-art performance    space of generated solutions (Cobbe et al., 2021;
+among open-source models on popular text-to-SQL        Irvine et al., 2023; Snell et al., 2024; Brown et al.,
+benchmarks, while also achieving competitive re-       2024; Zhang et al., 2024a). This expanded solu-
+sults against larger closed-source models albeit at    tion set is then filtered out using either rule based
+a much lower cost.                                     verifiers (Wang et al., 2022), such as picking the
+                                                       response that passes all the test-cases in the coding
+2   Related Work                                       domain, or using other models to compare and then
+                                                       select the best sample among candidates (Cobbe
+Text-to-SQL Generation. Early works in the             et al., 2021; Lightman et al., 2024). We explore
+space of text-to-SQL generation predominantly          the latter direction in the domain of text-to-SQL
+leveraged rule-based methods to parse natural lan-     generation.
+guage queries and map them to valid SQL state-
+ments (Popescu et al., 2003, 2004; Li and Jagadish,    3   Towards Building an Efficient
+2014). Recently, LLMs such as GPT-4 (OpenAI,               Text-to-SQL Pipeline
+2023) have facilitated this task by leveraging their
+strong textual priors to generate SQL queries (Li      Problem Setup. Text-to-SQL generation involves
+et al., 2023b). Due to the challenging nature of       translating a natural language query q into a struc-
+direct SQL generation, subsequent works instead        tured SQL query s that retrieves the desired infor-
+decomposed the generation process into dedicated       mation from a database. More formally, given a
+sub-tasks and prompted GPT-4 to solve each task        natural language question q, the schema S of a
+sequentially (Wang et al., 2023; Dong et al., 2023;    relational database D, and any extra metadata M
+Pourreza and Rafiei, 2023; Chen et al., 2024). For     associated with the query such as extra evidence
+example, MAC-SQL (Wang et al., 2023) defined           or few-shot examples from the database, the goal
+three sub-components namely a Selector, a Decom-       is to generate a valid SQL query s such that the
+poser, and a Refiner, where dedicated prompts were     execution of s on D returns the correct answer
+engineered for each component. Despite being           to q. In other words, the overall objective is to
+state-of-the-art on several SQL generation bench-      learn a model f : (q, S, M) → s. This problem
+marks, the reliance of these methods on very large     is challenging on many fronts because of the di-
+and closed-source models makes them inherently         versity in which the natural language question can
+inefficient and expensive, and poses accessibility     be expressed, the difficulty in inferring complex
+and privacy concerns. More recently, a few works       relational structures from a database schema, and
+have begun exploring the use of smaller open-          the restriction of generating only valid SQL syntax
+source models (under 10 billion parameters) for        for s. Due to these complexities, we divide the
+SQL generation tasks (Pourreza and Rafiei, 2024;       problem into three distinct modules which form
+Li et al., 2024a) and have shown promising re-         a blueprint for an efficient text-to-SQL pipeline,
+                                                   2146
+                                                                           SQL Executor
+
+
+
+                                           NN Lookup
+
+                               …
+
+                         DB Vector Index
+
+
+
+              Schema Linking                           SQL Generation
+                                                                                                   Multi-Sample
+                  Model                                    Model
+                                                                                                  Critiquing Model
+
+
+
+
+Figure 1: Starting with a natural language query q, database schema S, and metadata Mlink , the schema linking
+model returns a subset Sq of tables which are necessary to answer q. Next, the SQL generation model adds metadata
+Mgen obtained through retrieval against an embedding of the query e(q), and generates multiple possible SQL
+queries si . Finally, the multi-sample critiquing model comparatively evaluates the generations si along with their
+execution results ri when run on the database, and then selects one as the final output s.
+
+
+depicted in Figure 1. While the first two modules                 3.2   SQL Generation
+are commonly used, we make novel design rec-
+ommendations in our blueprint. The third module                   Given a reduced schema Sq , we then proceed to
+described in section 4 is original.                               generate a SQL query s as fgen : (q, Sq , Mgen ) →
+                                                                  s, where Mgen is associated metadata. Although
+3.1 Schema Linking                                                conceptually simple, generating a valid SQL query
+                                                                  often requires knowledge of the formatting of col-
+Schema linking is the task of identifying the rel-                umn values, for instance when using a WHERE
+evant tables and attributes within the schema S                   clause. To generate a correct SQL query s for the
+that are necessary to construct a valid SQL query                 example q “Which school is in California?”, fgen
+s based on the natural language query q. This step                must know whether the state of California is rep-
+is critical because SQL queries typically involve                 resented as “CA”, “California”, or another variant
+only a subset of the available tables and attributes.             thereof in the particular SQL database D.
+Correctly identifying this subset ensures that the
+subsequent steps including SQL generation are fo-                 Contextual Retrieval through Few-Shot Exam-
+cused on the most pertinent tables in the schema.                 ples. We thus augment the SQL generation process
+Schema linking also reduces the input’s length to                 by providing few-shot examples of the values in
+help it fit in the limited context size of existing lan-          each column as additional metadata in Mgen . By
+guage models, while reducing costs in the quadratic               including this information, the model can better
+Transformer attention (Vaswani et al., 2017) opera-               infer the correct SQL query, resolving potential
+tion, and improving context utilization (Liu et al.,              ambiguities related to data representation in the
+2024). Given the schema S containing information                  database. For string columns it is especially im-
+about each table and column type including the                    portant to provide information which is relevant
+primary key and foreign key relationships, and cor-               to the query; hence we use the nearest neighbours
+responding metadata Mlink , we denote our schema                  of q. The retrieval of few-shot examples is con-
+linking model as flink : (q, S, Mlink ) → Sq , where              ducted through a similarity measure with an em-
+Sq ⊆ S represents only the schemas of the tables                  bedding of the input query concatenated with any
+that are predicted to be needed for answering q. Our              additional evidence provided as metadata. A vec-
+aim here is to maximize the recall of predicted ta-               tor index on the entire database is constructed of-
+bles; high recall is essential because missing even               fline by indexing a fixed number of unique entries
+one necessary table immediately precludes com-                    of every string type column. We specifically use
+plete and correct SQL generation. While emphasiz-                 Alibaba-NLP/gte-large-en-v1.5 (Zhang et al.,
+ing recall may introduce some false positives (i.e.,              2024b) as the embedding model. For other column
+irrelevant tables included in Sq ), our subsequent                types, we randomly sample few-shot examples.
+stages are designed to be robust to such inaccura-                Robust Training with Noisy Table Injection. The
+cies.                                                             schema linking stage may predict more tables than
+                                                            2147
+are strictly necessary in Sq because it aims to max-           However, sampling multiple generations leaves
+imize recall. To combat this, we improve the ro-            us with the task of selecting the best possible gener-
+bustness of generation to noise in Sq by having the         ation among them. Prior works have used methods
+SQL generation step learn to discard unnecessary            such as majority voting (Wang et al., 2022), use
+and irrelevant tables. Starting with the ground-truth       of a reward model (Christiano et al., 2017; Cobbe
+schema Sq∗ from the training set containing only            et al., 2021; Lightman et al., 2024; Li et al., 2022a)
+necessary tables needed for query q, we inject extra        or a combination of the two to pick the best gen-
+tables denoting the result by Sq† . We sample any-          erated candidate (Brown et al., 2024) . This has
+where between 0 to 2 extra tables with a weighted           shown promising results in other domains like math
+probability, then train fgen on Sq† rather than Sq∗ .       and coding tasks (Hendrycks et al., 2021; Li et al.,
+Training. Starting with an open-source language             2022b). Other methods use pre-trained LLMs like
+model, we fine-tune on tuples (q, Sq† , Mgen , s) so        GPT-4 to judge the quality of the sampled gener-
+that the model learns to generate syntactically cor-        ations to select the best one (Zheng et al., 2023;
+rect and semantically valid SQL queries. The gen-           Lee et al., 2024). Such methods have the drawback
+eration follows a sequence to sequence paradigm             of utilizing expensive closed models like GPT-4 to
+to maximize the likelihood of outputs,                      evaluate the best candidate. We mitigate this cost
+                                                            by developing an open model for the purpose of
+                X
+ Lgen = −                 log P (s | q, Sq† , Mgen ), (1)   sample critiquing.
+           (q,Sq† ,Mgen ,s)                                 4.1   Multi-Sample Critiquing in MSc-SQL
+where P represents the probability assigned to s by         Sample critiquing involves evaluating the inputs
+the language model fgen . Integrating both retrieval        and the generated samples to determine the correct-
+of contextual examples through Mgen and expo-               ness of the generation. To facilitate this decision we
+sure to superfluous tables through Sq† refines the          can increase the contextual information provided to
+model’s capability to discern relevant schema in-           the model so it can make a more informed critique.
+formation, enhancing the accuracy of the generated          To this end, we provide the model with not only the
+SQL queries.                                                question, schema and the generated SQL queries,
+                                                            but also with the output of executing the SQL query
+4   MSc-SQL: Enhancing SQL Generation                       and any resulting error messages. For example, if
+    Using Multi-Sample Critiquing                           the query asks to find the average employee salary
+                                                            grouped by department, and a generated SQL query
+As mentioned in section 1, our objective is two-fold.       returns a single column of average salary without
+We propose to use only open-source language mod-            the grouping column, then the critiquing model
+els for their improved accessibility, transparency,         should be able to identify the discrepancy and rule
+adaptability, and privacy. Second, we aim to                out the generated query.
+achieve high-quality SQL generation using smaller              We let si and ri represent the candidate SQL
+language models to promote faster inference and re-         queries and their respective execution results, and
+duce overall computational costs. However, small            let Msc denote any additional metadata needed
+language models typically lag behind their larger           for this stage. As a baseline, we first con-
+counterparts in generation quality due to inherent          sider a basic critiquing model, using fisc to de-
+limitations in their capacity. This is especially true      note independent sample critiquing, where fisc :
+in challenging tasks like SQL generation that re-           (q, Sq , (si , ri ), Msc ) → [0, 1]. This model inde-
+quire a deep understanding of the complex hierar-           pendently critiques the candidates si which are then
+chies present in an SQL statement. We reconcile             ranked according to the model’s logits to output a
+this gap by increasing the test-time computation            single option. Although augmenting the input of
+budget used by smaller language models, sampling            fisc with ri improves the model’s ability to select
+multiple generations to improve the likelihood of           the correct SQL query, by independently ranking
+generating a correct SQL statement. In this work,           each SQL query the model still lacks the ability to
+we demonstrate that generating as few as three              jointly reason over multiple samples to consider
+samples can yield highly competitive results on             relative differences among them; we expect that
+SQL benchmarks while maintaining the overall ef-            critiquing multiple samples at once should allow
+ficiency of the pipeline.                                   the model to consider subtle nuances that might
+                                                        2148
+                                      Question                                                                Generated SQL 1
+  Question: Who is the illustrator that illustrated the least amount of cards? List
+                                                                                        SELECT T2.artist, T1.format FROM legalities AS T1 INNER JOIN
+  the format of play of the cards that he/she illustrated.
+                                                                                        cards AS T2 ON T1.uuid = T2.uuid GROUP BY T2.artist ORDER BY
+                                                                                                          COUNT(T2.id) ASC LIMIT 1
+  Evidence: format of the cards refers to format; illustrator refers to artist; the
+  least amount of cards refers to MIN(artist)                                                                  Result of SQL 1
+                                                                                              +----------------------+----------------------+
+  DB schema: card_games
+                                                                                              | artist               | format               |
+  TABLE "cards"
+                                                                                              +----------------------+----------------------+
+  (
+                                                                                              | Anna Pavleeva        | gladiator            |
+    id INTEGER primary key, -- Ex: 41138, 1349, 23810
+                                                                                              +----------------------+----------------------+
+    artist TEXT, -- artist that illustrated the card art. Ex: "Pete", "Andrea
+  Radeck", "Illustranesia"                                                                                    Generated SQL 2
+    ...
+  )                                                                                       SELECT T1.artist, T2.format FROM cards AS T1 INNER JOIN
+                                                                                         legalities AS T2 ON T1.uuid = T2.uuid GROUP BY T1.artist,
+  TABLE "legalities"                                                                            T2.format ORDER BY COUNT(T1.artist) LIMIT 1
+  (
+    id INTEGER primary key, -- unique id legality. Ex: 1, 2, 3                                                 Result of SQL 2
+    format TEXT, -- format of play. Ex: "pauper", "standard", "penny"                         +----------------------+----------------------+
+    ...                                                                                       | artist               | format               |
+    foreign key (uuid) references cards(uuid)                                                 +----------------------+----------------------+
+  )                                                                                           | None                 | commander            |
+  ...                                                                                         +----------------------+----------------------+
+
+
+
+Figure 2: Two example queries sampled from our SQL generation model. Both are given to MSc-SQL for critiquing;
+one is correct and one is incorrect. Joint reasoning over both queries allows MSc-SQL to better capture the nuanced
+differences between them and thus select the correct query.
+
+make one query correct over another.                                             Algorithm 1: Inference with MSc-SQL
+   We therefore propose to simultaneously cri-                                    Input: Natural language query q, schema S,
+tique multiple generated samples (provided they fit                                      metadata Mlink , Mgen , Msc
+within the maximum context size of the underlying                                 Output: Generated SQL query s
+model) to allow for a more comprehensive compari-
+                                                                                    Step 1: Schema Linking
+son. We illustrate an example in Figure 2 where we
+                                                                                    Predict relevant schema subset:
+provide two generated SQL samples that MSc-SQL
+                                                                                     Sq = flink (q, S, Mlink )
+must choose between. The question asks to identify
+the illustrator with the least amount of cards, along                               Step 2: SQL Generation
+with clarifying evidence on the ‘format’ and ‘artist’                               Retrieve nearest-neighbor examples and
+columns. While the first generated query is cor-                                     enrich metadata Mgen
+rect, the second one wrongly groups the ‘artist’ and                                Generate candidates:
+‘format’ columns resulting in the value None for                                     si = fgen (q, Sq , Mgen ), i = 1, . . . , n
+the ‘artist’ column (highlighted in red in the figure).                             Step 3: Sample Critiquing
+Providing the model with both generations at once                                   Execute candidates to obtain results ri
+makes it easier to discern the correct response. We                                 Select the best candidate:
+only illustrate two generated samples for clarity,                                   i∗ = fmsc (q, Sq , {(si , ri )}ni=1 , Msc )
+but MSc-SQL generalizes to n candidate samples                                      Return Selected SQL query s = si∗
+as fmsc : (q, S, {(si , ri )}ni=1 , Msc ) → {1, . . . , n}
+where the output is now the index of the selected
+SQL sample.                                                                     date pairs are arranged in a tournament bracket to
+Training. To facilitate training of our critiquing                              reduce the number of comparisons required. Over-
+model and leverage the existing knowledge embed-                                all, we find that MSc-SQL yields highly compet-
+ded in pre-trained open-source models, we model                                 itive results, outperforming several methods that
+this task in a similar manner to next token predic-                             use proprietary LLMs like GPT-4, and stands as
+tion and simply predict the correct sample index as                             the best performing open-source model for text-to-
+the next token.                                                                 SQL generation.
+
+4.2 Inference                                                                   5     Experiments
+The end-to-end inference process is specified in                                Implementation Details. For our experiments,
+Algorithm 1. In cases where the context size of                                 we considered open-source language models with
+the underlying model is not big enough to capture                               fewer than 10 billion parameters. Specifically, we
+all the candidates, we can reduce the context size                              used instruction-tuned variants of Mistral-7B-v0.3
+by employing pairwise comparisons on all pairs,                                 (Jiang et al., 2023), Llama-3-8B (Dubey et al.,
+a sliding window strategy (Sun et al., 2023), or a                              2024) and Gemma-2-9B (Riviere et al., 2024) mod-
+tournament-style voting mechanism where candi-                                  els. Fine-tuning was performed using QLoRA
+                                                                         2149
+Table 1: Results comparing recent methods on the BIRD and Spider benchmarks. Params. refers to the number of
+model parameters; if multiple models are used we select the single largest.
+
+ Method                                              Params. Dev EX%
+               Closed Proprietary Models
+ Distillery+GPT-4o-finetune (Maamari et al., 2024)    NA      67.2     Method                                        Params. Test EX%
+ Distillery+Gemini-1.5-Pro (Maamari et al., 2024)     NA      60.5                Closed Proprietary Models
+ CHESS+GPT-4 (Talaei et al., 2024)                    NA      65.0
+ MCS-SQL+GPT-4 (Lee et al., 2024)                     NA      63.4     CHESS+GPT-4 (Talaei et al., 2024)              NA      87.2
+ MAC-SQL+GPT-4 (Wang et al., 2023)                    NA      59.6     DAIL-SQL+GPT-4 (Gao et al., 2024)              NA      86.6
+                                                                       DIN-SQL+GPT-4 (Pourreza and Rafiei, 2023)      NA      85.3
+                      Open Models                                      C3+ChatGPT (Dong et al., 2023)                 NA      82.3
+ CHESS+Llama-3 (Talaei et al., 2024)                  70B     61.5                       Open Models
+ Distillery+Llama-3 (Maamari et al., 2024)            405B    59.9
+ SFT CodeS (Li et al., 2024a)                         15B     58.5     RESDSQL (Li et al., 2023a)                      3B     79.9
+ SFT CodeS (Li et al., 2024a)                          7B     57.2     NatSQL+T5 (Rai et al., 2023)                    3B     78.0
+ DTS-SQL+DeepSeek (Pourreza and Rafiei, 2024)          7B     55.8     DTS-SQL+Mistral (Pourreza and Rafiei, 2024)     7B     77.0
+ MSc-SQL (Ours)                                        9B     65.6     MSc-SQL (Ours)                                  9B     84.7
+
+                 (a) BIRD Benchmark                                                  (b) Spider Benchmark
+
+(Dettmers et al., 2023), with a LoRA rank of 32, a                   ish functionally correct queries. VES evaluates
+LoRA α of 128, and a dropout rate of 0.05. Fine-                     both the correctness and computational efficiency
+tuning was conducted with an effective batch size                    of generated queries, which may be important in
+of 12, using a single NVIDIA A6000 Ada GPU                           practical real-time systems.1 Still, generating cor-
+with 48GB VRAM. The use of QLoRA allowed for                         rect queries is a challenging enough problem in its
+memory efficient fine-tuning of these models with-                   own right, so we prioritize EX and forgo evalua-
+out the need to update all the model parameters, in                  tions of syntactic precision or efficiency.
+line with our efficiency goal.                                       Comparison with SoTA on BIRD and Spider 1.0
+Datasets and Metrics. We utilized two primary                        Datasets. In Table 1 we provide detailed evalua-
+datasets of text-to-SQL examples, Spider 1.0 (Yu                     tion of our model’s performance against the cur-
+et al., 2018) and BIRD (Li et al., 2023b), each                      rent state-of-the-art (SoTA) methods across both
+serving distinct roles in evaluating the effective-                  major benchmarks The results are grouped under
+ness of our approach to text-to-SQL generation.                      two headings to emphasize the performance dispar-
+Spider 1.0 is a widely recognized dataset contain-                   ity between closed proprietary models and open
+ing queries across 138 different domains span-                       models. Our method, MSc-SQL which integrates
+ning 200 databases. The BIg Bench for LaRge-                         multi-sample critiquing, demonstrates impressive
+scale Database Grounded Text-to-SQL Evaluation                       performance improvements across the two bench-
+(BIRD) is a more comprehensive and challenging                       marks compared to existing methods using open
+benchmark compared to Spider 1.0. BIRD contains                      models. MSc-SQL critiques one sample from each
+over 12,751 unique question-SQL pairs on 95 big                      of a fine-tuned Mistral-7B, Llama-8B, and Gemma-
+databases with a total size of 33.4 GB. All of the                   8B model to select the best candidate. Although,
+results in our paper are reported on Spider 1.0’s test               it only uses models under 10 billion parameters,
+set and BIRD’s Dev set.                                              our overall pipeline achieves a competitive score
+                                                                     often outperforming methods that use proprietary
+   Key evaluation metrics for text-to-SQL genera-                    language models such as Gemini-Pro (Reid et al.,
+tion are: Execution Accuracy (EX), Exact Match                       2024) and GPT-4 (OpenAI, 2023), while also main-
+(EM), and Validity and Efficiency Score (VES) (Yu                    taining a significant advantage in inference speed.
+et al., 2018; Li et al., 2023b). EX measures the cor-                Compared to methods using open models, MSc-
+rectness of the SQL queries by checking if their ex-                 SQL outperforms the existing methods by a signifi-
+ecution results match the expected outcomes, mak-                    cant margin of 4.18 percentage points on BIRD.
+ing it a direct indicator of practical usability. EM
+                                                                     Ablations. We show in Table 2 detailed ablation
+assesses syntactic precision by comparing the gen-
+                                                                     studies on different settings of our pipeline to un-
+erated SQL query against the reference query char-
+acter by character; however, since different SQL                         1
+                                                                          Note that the run-time efficiency of the generated query
+queries can produce the same results, EM may pun-                    is separate from the efficiency of the text-to-SQL method.
+
+                                                               2150
+Table 2: Ablations of our method on BIRD. Superscripts        Figure 3: Effect of using different models to each create
+M , L, and G refer to the fine-tuned versions of Mistral,     one sample for multi-sample critiquing. The generation
+Llama-3, and Gemma-2 models respectively.                     models are all fine-tuned Mistral-7B models, but with
+                                                              different random seeds used during training.
+            Model Family                 Params. Dev EX%
+                                                                                     66
+                  M
+                 fgen                     7B      56.4
+                  L                                                                  65
+                 fgen                     8B      54.1
+                  G
+                                          9B      55.0
+
+
+
+
+                                                                    Dev Set EX (%)
+                 fgen                                                                64
+               M         M
+             flink + fgen                 7B      61.3
+               M         L                                                           63
+             flink + fgen                 8B      60.0
+               M         G
+             flink + fgen                 9B      60.8                               62
+        M       M      M         M
+     flink → {fgen , fgen } → fmsc        7B      64.0
+        M       L      L         M                                                   61
+     flink → {fgen , fgen } → fmsc        8B      63.5
+        M       G      G         M
+     flink → {fgen , fgen } → fmsc        9B      62.7                               60
+    M        M     M      M        M                                                      1          2      3       4      5          6
+  flink → {fgen , fgen , fgen } → fmsc    7B      64.8
+    M        L     L      L        M
+  flink → {fgen , fgen , fgen } → fmsc    8B      64.1                                                    No. of samples
+    M        G     G      G        M
+  flink → {fgen , fgen , fgen } → fmsc    9B      62.9        Table 3: EX% on the BIRD Dev set for varied temper-
+    M        M     L      G        M
+  flink → {fgen , fgen , fgen } → fmsc    9B      65.6        atures T and number of queries used for multi-sample
+                                                              critiquing. The underlying generation model is a fixed
+                                                              fine-tune of Mistral-7B.
+derstand how various parts of it contribute to the
+performance on the BIRD benchmark. We denote                                  Samples T = 0 T = 0.1 T = 0.5 T = 1
+the underlying LLM using a superscript: f M , f L ,                           1               61.3       61.4      59.9        56.5
+f G denote the Mistral, Llama and Gemma models                                2               61.3       61.6      61.4        59.3
+                                                                              3               61.3       61.8      61.9        60.6
+mentioned above. We first measure the effect of                               4               61.3       62.0      62.3        61.4
+directly predicting SQL using fgen , and then add                             5               61.3       62.0      62.4        62.0
+schema linking before generation as flink → fgen .
+Schema linking increases the overall accuracy by              from a smaller language model to three maintains
+5-6% across generation models by removing redun-              the overall efficiency of the pipeline compared to
+dant tables and improving focus. We then incor-               using very large models. Since these models are
+porate multi-sample critiquing by using either two            trained using QLoRA, the memory footprint of us-
+or three samples from the underlying generation               ing multiple versions is comparable to just loading
+models and let the critiquing model fmsc pick the             the base model.
+most accurate SQL generation. Training such a                    To quantify the effect of varying temperature
+model to critique the generations consistently in-            while sampling from a single generation model
+creases the overall score across various settings as          fgen , we fix the temperature T to a value in [0, 1],
+the sample size increases. Diversity of samples               generate between one and five queries, and mea-
+is also important. Sampling from each of a fine-              sure the performance of multi-sample critiquing on
+tuned Mistral, Llama, and Gemma model results in              the BIRD Dev set with results shown in Table 3.
+the highest performance, achieving an accuracy of             Of course, when T is fixed to zero, sampling is
+65.6% on the BIRD Dev set. We denote this setting             deterministic and there is no benefit to critiquing.
+as “MSc-SQL” in Table 1.                                      Increasing the number of samples and selecting the
+   We further perform analysis on the effect of us-           final output with fmsc consistently increases the ac-
+ing multiple generation models for sampling SQL               curacy across different T values. We note the best
+outputs and contrast it with sampling multiple SQL            results with temperature T = 0.5.
+outputs from a single generation model with non-                 Based on these ablations, it is evident that sam-
+zero temperature. Towards this, we train a number             pling from diverse generation models and incor-
+of different SQL generation models fgen from a                porating our multi-sample critiquing model in-
+base Mistral model with different random seeds,               creases the overall accuracy of the text-to-SQL
+obtain one SQL sample from each model (with tem-              pipeline. Compared to sampling from a single gen-
+perature set to zero), and use our critiquing model           eration model with non-zero temperature, training
+to pick the best candidate. We plot performance               different models from random initializations in-
+on the BIRD Dev set in Figure 3 and see that the              creases the likelihood of generating a correct query
+improvement in accuracy saturates between three               which can be picked out by multi-sample critiquing,
+and five models. Limiting the number of samples               and translates to higher performance. Both abla-
+                                                           2151
+Table 4: Performance of methods as the complexity of       Table 5: Measuring the effect of different sample cri-
+BIRD queries is varied (EX%).                              tiquing techniques on BIRD.
+
+                  Simple Moderate Challenging Overall           Method                                         Dev EX%
+GPT-4-turbo        54.3    35.2       41.7     46.3                         M
+                                                                Baseline: flink → fgen M
+                                                                                                                61.3
+SFT CodeS-7B       64.6    46.9       40.3     57.2               M        M     L      G
+                                                                flink → {fgen , fgen , fgen } → foracle         71.4
+SFT CodeS-15B      65.8    48.8       42.4     58.5               M        M     L      G         1
+                                                                flink → {fgen , fgen , fgen } → fisc            60.2
+MAC-SQL+GPT-4      65.7    52.7       40.3     59.4               M
+                                                                flink      M
+                                                                      → {fgen    L
+                                                                              , fgen    G
+                                                                                     , fgen       2
+                                                                                            } → fisc            62.9
+CHESS+GPT-4        65.4    64.8       58.3     64.6               M        M     L      G
+                                                                flink → {fgen , fgen , fgen } → fconsistency    62.6
+MSc-SQL (Ours)     72.0    58.0       49.0     65.6               M        M     L      G         M
+                                                                flink → {fgen , fgen , fgen } → fmsc            65.6
+
+tions highlight that diversity of samples is bene-
+ficial. Duplicate generated queries are not help-          wardBench leaderboard (Lambert et al., 2024),
+ful in multi-sample critiquing, whereas generating         Skywork-Reward-Llama-3.1-8B, that is tasked to
+diverse queries allows fmcs to contrast several ap-        predict the correctness of the generated output one
+proaches to the problem as well as execution results.      at a time, with the highest ranked sample taken as
+Ultimately, only a single correct query is needed,         the output. We refer to this model as fisc1 . We also
+
+but diverse samples provide more information to            fine-tune a Llama-8B on the same dataset as we
+determine which may be correct.                            train fmsc , but with only a single query in context
+Query Complexity. In Table 4 we compare how                as described in section 4, and choose the highest
+varying query complexity affects accuracy, using           ranked result. We refer to this as fisc 2 . Addition-
+
+annotations from the BIRD benchmark. We see an             ally, we evaluate a third approach based on self-
+overall improvement compared to most methods               consistency (Wang et al., 2022), which selects the
+on all three categories. Importantly, we observe           most consistent output among the generated out-
+that MSc-SQL performs much better on simple
+                                                                                                          1 per-
+                                                           puts, referred as fconsistency . We see that fisc
+queries compared to all the current methods, while         forms worse than the baseline (i.e. no critiquing)
+CHESS+GPT-4 (Talaei et al., 2024) performs better          which is likely due to the reward model not being
+on moderate and challenging categories. We be-             specifically trained on SQL tasks. While we see an
+lieve this to due to the their use of GPT-4 to gener-      improvement of 1.6 p.p. from training fisc 2 on SQL
+
+ate SQL queries which is expected to be much bet-          data. The self-consistency approach fconsistency
+ter at generating coherent complex sequences. Due          shows 1.3 p.p. improvements over the baseline,
+to the plug-and-play nature of MSc-SQL where               comparable to fisc 2 . Multi-sample critiquing f
+                                                                                                             msc
+we can easily fine-tune and swap models in the             outperforms all other selection methods by a large
+pipeline, as smaller models improve in their ability       margin; an improvement of 4.3 p.p. over the base-
+to generate more complex sequences, the overall            line and 2.7 p.p. over fisc2 , further demonstrating
+
+accuracy of our method can improve accordingly.            the benefits of critiquing multiple samples at once.
+Analyzing Multi-Sample Critiquing. The data                6   Conclusion
+presented in Table 5 highlights the effectiveness of
+the sample critiquing methodologies described in           We present an approach for text-to-SQL transla-
+section 4. We compare these methods with an or-            tion that leverages open-source language models
+acle critiquing model, foracle , that always chooses       to build an efficient and high performing method,
+the correct query when there is at least one cor-          and show comprehensive evaluations on two ex-
+rectly generated SQL query in the available sam-           isting benchmarks along with analysis on various
+ples. With the oracle model, the pipeline’s accu-          design choices made in our approach. We show
+racy is 71.4% on the BIRD Dev set, representing            that multi-sample critiquing is needed to address
+the ceiling in terms of the performance for a fixed        the limitations of smaller language models to com-
+generation model.                                          pete with larger and proprietary counterparts. Our
+   To show the efficacy of the multi-sample cri-           critiquing model is trained to leverage richer con-
+tiquing method with fmsc , we first compare two            textual information, including query execution re-
+different critiquing models that process samples           sults and errors to determine the best generation
+independently to generate a likelihood of cor-             among candidate samples.
+rectness. One is an off-the-shelf high perform-
+ing Llama-8B reward model taken from the Re-
+                                                        2152
+7   Limitations & Risks                                  Paul F Christiano, Jan Leike, Tom Brown, Miljan Mar-
+                                                           tic, Shane Legg, and Dario Amodei. 2017. Deep
+While our approach performs competitively with             reinforcement learning from human preferences. In
+most methods that use closed models, the choice to         Advances in Neural Information Processing Systems,
+use smaller language models poses an inherent chal-        volume 30.
+lenge on the capability of generating complex SQL        Karl Cobbe, Vineet Kosaraju, Mohammad Bavarian,
+statements. This was observed to be the case when          Mark Chen, Heewoo Jun, Lukasz Kaiser, Matthias
+analyzing responses qualitatively based on query           Plappert, Jerry Tworek, Jacob Hilton, Reiichiro
+                                                           Nakano, Christopher Hesse, and John Schulman.
+complexity. We found that reliance on smaller lan-         2021. Training verifiers to solve math word prob-
+guage models necessitated the use of the critiquing        lems. arXiv:2110.14168.
+step for adequate performance, which increases the
+                                                         Tim Dettmers, Artidoro Pagnoni, Ari Holtzman, and
+complexity of the inference pipeline, even though          Luke Zettlemoyer. 2023. QLoRA: Efficient Fine-
+the overall computational demand is lower than             tuning of Quantized LLMs. In Advances in Neural
+competing methods. We leave further investigation          Information Processing Systems, volume 36, pages
+of the effects of critiquing larger open models, the       10088–10115.
+effects of multi-sample critiquing on them, and the      Xuemei Dong, Chao Zhang, Yuhang Ge, Yuren Mao,
+trade-offs around cost and performance to future           Yunjun Gao, Lu Chen, Jinshu Lin, and Dongfang Lou.
+work.                                                      2023. C3: Zero-shot text-to-SQL with ChatGPT.
+   There can also be risks that arise when relying         arXiv:2307.07306.
+on text-to-SQL models or more generally agentic          Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey,
+workflows involving LLMs. Such models could                Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman,
+inadvertently, or by way of an attack, output SQL          Akhil Mathur, Alan Schelten, Amy Yang, Angela
+                                                           Fan, et al. 2024. The Llama 3 Herd of Models.
+queries that damage the databases which are acces-         arXiv:2407.21783.
+sible, such as by dropping tables. Our proposed
+method MSc-SQL is designed to automatically ex-          Dawei Gao, Haibin Wang, Yaliang Li, Xiuyu Sun,
+                                                           Yichen Qian, Bolin Ding, and Jingren Zhou. 2024.
+ecute generated SQL code on the database and
+                                                           Text-to-SQL Empowered by Large Language Mod-
+further process the outputs. Hence, if the generated       els: A Benchmark Evaluation. Proc. VLDB Endow.,
+code is damaging or malicious it could be automat-         17(5):1132–1145.
+ically executed leading to harms. Any such work-
+                                                         Dan Hendrycks, Collin Burns, Saurav Kadavath, Akul
+flow that automatically runs generated code should         Arora, Steven Basart, Eric Tang, Dawn Song, and
+be implemented with guardrails to prevent perma-           Jacob Steinhardt. 2021. Measuring mathematical
+nent damage, for instance by backing up databases,         problem solving with the MATH dataset. In Thirty-
+and segregating the agentic computing environment          fifth Conference on Neural Information Processing
+                                                           Systems Datasets and Benchmarks Track (Round 2).
+from other production systems.
+                                                         Robert Irvine, Douglas Boubert, Vyas Raina, Adian
+                                                           Liusie, Ziyi Zhu, Vineet Mudupalli, Aliaksei Kor-
+References                                                 shuk, Zongyi Liu, Fritz Cremer, Valentin Assassi,
+                                                           Christie-Carol Beauchamp, Xiaoding Lu, Thomas
+Maciej Besta, Nils Blach, Ales Kubicek, Robert Ger-        Rialan, and William Beauchamp. 2023. Rewarding
+ stenberger, Michal Podstawski, Lukas Gianinazzi,          chatbots for real-world engagement with millions of
+ Joanna Gajda, Tomasz Lehmann, Hubert Niewiadom-           users. arXiv:2303.06135.
+ ski, Piotr Nyczyk, and Torsten Hoefler. 2024. Graph
+ of thoughts: Solving elaborate problems with large      Albert Q. Jiang, Alexandre Sablayrolles, Arthur Men-
+ language models. In Proceedings of the AAAI Con-          sch, Chris Bamford, Devendra Singh Chaplot, Diego
+ ference on Artificial Intelligence, volume 38, pages      de las Casas, Florian Bressand, Gianna Lengyel,
+ 17682–17690.                                              Guillaume Lample, Lucile Saulnier, Lélio Re-
+                                                           nard Lavaud, Marie-Anne Lachaux, Pierre Stock,
+Bradley Brown, Jordan Juravsky, Ryan Ehrlich, Ronald       Teven Le Scao, Thibaut Lavril, Thomas Wang, Timo-
+  Clark, Quoc V Le, Christopher Ré, and Aza-               thée Lacroix, and William El Sayed. 2023. Mistral
+  lia Mirhoseini. 2024. Large language monkeys:            7b. arXiv:2310.06825.
+  Scaling inference compute with repeated sampling.
+  arXiv:2407.21787.                                      Nathan Lambert, Valentina Pyatkin, Jacob Morrison,
+                                                           LJ Miranda, Bill Yuchen Lin, Khyathi Chandu,
+Xinyun Chen, Maxwell Lin, Nathanael Schärli, and           Nouha Dziri, Sachin Kumar, Tom Zick, Yejin Choi,
+  Denny Zhou. 2024. Teaching Large Language Mod-           Noah A. Smith, and Hannaneh Hajishirzi. 2024. Re-
+  els to Self-Debug. In The Twelfth International Con-     wardbench: Evaluating reward models for language
+  ference on Learning Representations.                     modeling. arXiv:2403.13787.
+                                                     2153
+Dongjun Lee, Choongwon Park, Jaehyuk Kim, and              Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida,
+  Heesoo Park. 2024. MCS-SQL: Leveraging Multiple            Carroll Wainwright, Pamela Mishkin, Chong Zhang,
+  Prompts and Multiple-Choice Selection For Text-to-         Sandhini Agarwal, Katarina Slama, Alex Ray, John
+  SQL Generation. arXiv:2405.07467.                          Schulman, Jacob Hilton, Fraser Kelton, Luke Miller,
+                                                             Maddie Simens, Amanda Askell, Peter Welinder,
+Fei Li and H. V. Jagadish. 2014. Constructing an             Paul F Christiano, Jan Leike, and Ryan Lowe. 2022.
+  interactive natural language interface for relational      Training language models to follow instructions with
+  databases. Proc. VLDB Endow., 8(1):73–84.                  human feedback. In Advances in Neural Information
+                                                             Processing Systems, volume 35, pages 27730–27744.
+Haoyang Li, Jing Zhang, Cuiping Li, and Hong Chen.
+  2023a. RESDSQL: Decoupling Schema Linking and            Ana-Maria Popescu, Alex Armanasu, Oren Etzioni,
+  Skeleton Parsing for Text-to-SQL. In Proceedings           David Ko, and Alexander Yates. 2004. Modern nat-
+  of the AAAI Conference on Artificial Intelligence,         ural language interfaces to databases: Composing
+  volume 37, pages 13067–13075.                              statistical parsing with semantic tractability. In COL-
+                                                             ING 2004: Proceedings of the 20th International
+Haoyang Li, Jing Zhang, Hanbing Liu, Ju Fan, Xi-             Conference on Computational Linguistics, pages 141–
+  aokang Zhang, Jun Zhu, Renjie Wei, Hongyan Pan,            147.
+  Cuiping Li, and Hong Chen. 2024a. CodeS: Towards
+  building open-source language models for text-to-        Ana-Maria Popescu, Oren Etzioni, and Henry Kautz.
+  SQL. Proceedings of the ACM on Management of               2003. Towards a theory of natural language inter-
+  Data, 2(3):1–28.                                           faces to databases. In Proceedings of the 8th interna-
+                                                             tional conference on Intelligent user interfaces, pages
+Jinyang Li, Binyuan Hui, Ge Qu, Jiaxi Yang, Binhua Li,       149–157.
+   Bowen Li, Bailin Wang, Bowen Qin, Ruiying Geng,
+   Nan Huo, Xuanhe Zhou, Ma Chenhao, Guoliang              Mohammadreza Pourreza and Davood Rafiei. 2023.
+   Li, Kevin Chang, Fei Huang, Reynold Cheng, and           DIN-SQL: Decomposed In-Context Learning of Text-
+   Yongbin Li. 2023b. Can LLM Already Serve as A            to-SQL with Self-Correction. In Advances in Neural
+   Database Interface? A BIg Bench for Large-Scale          Information Processing Systems, volume 36.
+   Database Grounded Text-to-SQLs. In Advances in
+   Neural Information Processing Systems, volume 36,       Mohammadreza Pourreza and Davood Rafiei. 2024.
+   pages 42330–42357.                                       DTS-SQL: Decomposed Text-to-SQL with Small
+                                                            Large Language Models . arXiv:2402.01117.
+Junyou Li, Qin Zhang, Yangbin Yu, Qiang Fu, and
+  Deheng Ye. 2024b. More agents is all you need.
+                                                           Rafael Rafailov, Archit Sharma, Eric Mitchell, Christo-
+  arXiv:2402.05120.
+                                                             pher D Manning, Stefano Ermon, and Chelsea Finn.
+Yifei Li, Zeqi Lin, Shizhuo Zhang, Qiang Fu, Bei Chen,       2023. Direct Preference Optimization: Your Lan-
+  Jian-Guang Lou, and Weizhu Chen. 2022a. Making             guage Model is Secretly a Reward Model. In Ad-
+   large language models better reasoners with step-         vances in Neural Information Processing Systems,
+   aware verifier. arXiv:2206.02336.                         volume 36, pages 53728–53741.
+
+Yujia Li, David Choi, Junyoung Chung, Nate Kushman,        Daking Rai, Bailin Wang, Yilun Zhou, and Ziyu
+  Julian Schrittwieser, Rémi Leblond, Tom Eccles,            Yao. 2023.    Improving generalization in lan-
+  James Keeling, Felix Gimeno, Agustin Dal Lago,             guage model-based text-to-SQL semantic parsing:
+  et al. 2022b. Competition-level code generation with       Two simple semantic boundary-based techniques.
+  alphacode. Science, 378(6624):1092–1097.                   arXiv:2305.17378.
+
+Hunter Lightman, Vineet Kosaraju, Yuri Burda, Harri-       Machel Reid, Nikolay Savinov, Denis Teplyashin,
+  son Edwards, Bowen Baker, Teddy Lee, Jan Leike,           Dmitry Lepikhin, Timothy Lillicrap, Jean-baptiste
+  John Schulman, Ilya Sutskever, and Karl Cobbe.            Alayrac, Radu Soricut, Angeliki Lazaridou, Orhan
+  2024. Let’s verify step by step. In The Twelfth Inter-    Firat, Julian Schrittwieser, et al. 2024. Gemini 1.5:
+  national Conference on Learning Representations.          Unlocking multimodal understanding across millions
+                                                            of tokens of context. arXiv:2403.05530.
+Nelson F Liu, Kevin Lin, John Hewitt, Ashwin Paran-
+  jape, Michele Bevilacqua, Fabio Petroni, and Percy       Morgane Riviere, Shreya Pathak, Pier Giuseppe
+  Liang. 2024. Lost in the middle: How language mod-        Sessa, Cassidy Hardin, Surya Bhupatiraju, Léonard
+  els use long contexts. Transactions of the Association    Hussenot, Thomas Mesnard, Bobak Shahriari,
+  for Computational Linguistics, 12:157–173.                Alexandre Ramé, et al. 2024. Gemma 2: Im-
+                                                            proving open language models at a practical size.
+Karime Maamari, Fadhil Abubaker, Daniel Jaroslawicz,        arXiv:2408.00118.
+  and Amine Mhedhbi. 2024. The Death of Schema
+  Linking? Text-to-SQL in the Age of Well-Reasoned         Charlie Snell, Jaehoon Lee, Kelvin Xu, and Aviral Ku-
+  Language Models. arXiv:2408.07702.                         mar. 2024. Scaling LLM test-time compute optimally
+                                                             can be more effective than scaling model parameters.
+OpenAI. 2023. GPT-4 Technical Report.                        arXiv:2408.03314.
+                                                       2154
+Weiwei Sun, Lingyong Yan, Xinyu Ma, Shuaiqiang           Di Zhang, Jiatong Li, Xiaoshui Huang, Dongzhan Zhou,
+ Wang, Pengjie Ren, Zhumin Chen, Dawei Yin, and            Yuqiang Li, and Wanli Ouyang. 2024a. Access-
+ Zhaochun Ren. 2023. Is ChatGPT good at search?             ing GPT-4 level Mathematical Olympiad Solutions
+ investigating large language models as re-ranking         via Monte Carlo Tree Self-refine with LLaMa-3 8B.
+ agents. In Proceedings of the 2023 Conference on           arXiv:2406.07394.
+ Empirical Methods in Natural Language Processing.
+                                                         Xin Zhang, Yanzhao Zhang, Dingkun Long, Wen Xie,
+Shayan Talaei, Mohammadreza Pourreza, Yu-Chen              Ziqi Dai, Jialong Tang, Huan Lin, Baosong Yang,
+  Chang, Azalia Mirhoseini, and Amin Saberi. 2024.         Pengjun Xie, Fei Huang, Meishan Zhang, Wenjie Li,
+  CHESS: Contextual harnessing for efficient SQL syn-      and Min Zhang. 2024b. mGTE: Generalized Long-
+  thesis. arXiv:2405.16755.                                Context Text Representation and Reranking Models
+                                                           for Multilingual Text Retrieval. arXiv:2407.19669.
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob         Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan
+  Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz            Zhuang, Zhanghao Wu, Yonghao Zhuang, Zi Lin,
+  Kaiser, and Illia Polosukhin. 2017. Attention is all     Zhuohan Li, Dacheng Li, Eric Xing, Hao Zhang,
+  you need. In Advances in Neural Information Pro-         Joseph E Gonzalez, and Ion Stoica. 2023. Judging
+  cessing Systems, volume 30.                              LLM-as-a-Judge with MT-Bench and Chatbot Arena.
+                                                           In Advances in Neural Information Processing Sys-
+Bing Wang, Changyu Ren, Jian Yang, Xinnian Liang,          tems, volume 36.
+  Jiaqi Bai, Qian-Wen Zhang, Zhao Yan, and Zhoujun
+  Li. 2023. MAC-SQL: Multi-agent collaboration for
+  text-to-SQL. arXiv:2312.11242.
+
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc
+  Le, Ed Chi, Sharan Narang, Aakanksha Chowdh-
+  ery, and Denny Zhou. 2022. Self-consistency im-
+  proves chain of thought reasoning in language mod-
+  els. arXiv:2203.11171.
+
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+   Bosma, Brian Ichter, Fei Xia, Ed Chi, Quoc V Le,
+   and Denny Zhou. 2022. Chain-of-thought prompt-
+   ing elicits reasoning in large language models. In
+  Advances in Neural Information Processing Systems,
+   volume 35.
+
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran,
+  Tom Griffiths, Yuan Cao, and Karthik Narasimhan.
+  2023a. Tree of thoughts: Deliberate problem solving
+  with large language models. In Advances in Neural
+  Information Processing Systems, volume 36, pages
+  11809–11822.
+
+Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak
+  Shafran, Karthik R Narasimhan, and Yuan Cao.
+  2023b. ReAct: Synergizing Reasoning and Acting
+  in Language Models. In The Eleventh International
+  Conference on Learning Representations.
+
+Tao Yu, Rui Zhang, Kai Yang, Michihiro Yasunaga,
+  Dongxu Wang, Zifan Li, James Ma, Irene Li, Qingn-
+  ing Yao, Shanelle Roman, Zilin Zhang, David Radev,
+  Dragomir Chiang, Julia Hockenmaier, and Jun’ichi
+  Tsujii. 2018. Spider: A Large-Scale Human-Labeled
+  Dataset for Complex and Cross-Domain Semantic
+  Parsing and Text-to-SQL task. In Proceedings of the
+  2018 Conference on Empirical Methods in Natural
+  Language Processing, pages 3911–3921.
+
+Eric Zelikman, Georges Harik, Yijia Shao, Varuna
+  Jayasiri, Nick Haber, and Noah D Goodman. 2024.
+  Quiet-star: Language models can teach themselves
+  to think before speaking. arXiv:2403.09629.
+                                                     2155
+A   Appendix
+We specify example prompts and outputs used to train the schema linking, SQL generation and multi-
+sample critiquing models.
+
+A.1 Schema Linking
+
+User : As an experienced and professional database administrator , your
+ task is to analyze a user question and a database schema to provide
+relevant information . You are given an SQL Question , " Evidence " which
+ is information that you need to use to solve the question , " DB
+schema " containing the database schema .
+
+Identify and list all the relevant tables names from the DB schema
+based on the user question , database schema and evidence provided .
+Make sure you include all of them .
+
+SQL Question : What is the highest eligible free rate for K -12
+students in the schools in Alameda County ?
+
+Evidence : Eligible free rate for K -12 = ` Free Meal Count (K -12) ' / `
+Enrollment (K -12) '
+
+DB schema : california_schools
+TABLE " frpm "
+(
+  " CDSCode " TEXT primary key ,
+  " Academic Year " TEXT ,
+  " County Code " TEXT ,
+  " District Code " INTEGER ,
+  ...
+  2013 -14 CALPADS Fall 1 Certification Status INTEGER ,
+  foreign key ( CDSCode ) references schools ( CDSCode )
+)
+
+TABLE " satscores "
+(
+  " cds " TEXT primary key ,
+  " rtype " TEXT ,
+  " sname " TEXT ,
+  " dname " TEXT ,
+  ...
+  foreign key ( cds ) references schools ( CDSCode )
+)
+
+TABLE " schools "
+(
+  " CDSCode " TEXT primary key ,
+  " NCESDist " TEXT ,
+  " NCESSchool " TEXT ,
+  " StatusType " TEXT ,
+  ...
+  LastUpdate DATE ,
+                                              2156
+)
+
+Assistant :
+``` json
+{
+     " tables ": [" frpm " , " schools "]
+}
+```
+
+A.2 SQL Generation
+
+User : You are given an SQL Question , " Evidence " which is information
+that you need to use to solve the question , 'DB schema ' containing
+the database schema .
+Think step by step and solve the question by coming up with the
+correct SQL statement that solves the question .
+
+Important things to keep in mind :
+1. Only use the tables that are required to solve the task .
+2. Use the " evidence " and sample values and column descriptions given
+ to you for reasoning .
+3. Don 't forget keywords such as DISTINCT , WHERE , GROUP BY , ORDER BY ,
+ LIMIT , etc . if needed .
+
+SQL Question : What is the highest eligible free rate for K -12
+students in the schools in Alameda County ?
+
+Evidence : Eligible free rate for K -12 = ` Free Meal Count (K -12) ` / `
+Enrollment (K -12) `
+
+DB schema : california_schools
+TABLE " frpm "
+(
+  " CDSCode " TEXT primary key , -- Example : "10621660114355" ,
+  "10621176113575" , "10621256113849" ,
+  " Academic Year " TEXT , -- Example : "2014 -2015" ,
+  " County Name " TEXT , -- Example : " Alameda ", " Contra Costa ", " Santa
+  Clara " ,
+  " District Name " TEXT , -- Example : " Alameda County Offic ..." , " San
+  Francisco County ..." , " San Mateo County Off ..." ,
+  ...
+  foreign key ( CDSCode ) references schools ( CDSCode )
+)
+
+TABLE " schools "
+(
+  " CDSCode " TEXT primary key , -- Example : "04755070000000" ,
+  "04615490000000" , "04746820000000" ,
+  " County " TEXT , -- County name Example : " Alameda ", " Contra Costa ", "
+  Santa Clara " ,
+  " District " TEXT , -- Example : " Alameda County Offic ..." , " San
+  Francisco County ..." , " San Mateo County Off ..." ,
+                                            2157
+    " School " TEXT , -- Example : " Alameda County Oppor ..." , " Alameda
+    County Speci ..." , " Alameda City Unified ..." ,
+    " City " TEXT , -- Example : " Alameda " , " Santa Clara " , " San Mateo ",
+    ...
+)
+
+Reminder of the SQL Question : What is the highest eligible free rate
+for K -12 students in the schools in Alameda County ?
+
+Assistant :
+``` json
+{
+     " sql ": " SELECT ` Free Meal Count (K -12) ` / ` Enrollment (K -12) `
+     FROM frpm WHERE ` County Name ` = ' Alameda ' ORDER BY ( CAST (` Free
+     Meal Count (K -12) ` AS REAL ) / ` Enrollment (K -12) `) DESC LIMIT 1"
+}
+```
+
+A.3 Multi-Sample Critiquing
+
+User : You are an SQL , database expert . A previous user was given a
+task of writing a SQL query given a question prompt . The user wrote 2
+ possible SQL queries . One is correct and one is wrong given the
+question . You task is to use the question and your expertise to
+decide which one is correct . Here is the question prompt :
+
+You are given an ' SQL Question ', ' Evidence ' which is information that
+ you need to use to solve the question , 'DB schema ' containing the
+database schema .
+Think step by step and solve the question by coming up with the
+correct SQL statement that solves the question .
+
+Important things to keep in mind :
+1. Only use the tables that are required to solve the task .
+2. Use the " evidence " and sample values and column descriptions given
+ to you for reasoning .
+3. Don 't forget keywords such as DISTINCT , WHERE , GROUP BY , ORDER BY ,
+ LIMIT , etc . if needed .
+
+SQL Question : Please list the phone numbers of the direct charter -
+funded schools that are opened after 2000/1/1.
+
+Evidence : Charter schools refers to ` Charter School ( Y/N ) ` = 1 in the
+ frpm
+
+DB schema : Database : california_schools
+TABLE " frpm "
+(
+  CDSCode TEXT primary key , -- Example : "10621661030675" ,
+  "04755070433953" , "10621661035831" ,
+  " Academic Year " TEXT , -- Example : "2014 -2015" ,
+  " County Code " TEXT , -- Example : "33" , "48" , "49" ,
+                                         2158
+    " District Code " INTEGER , -- Example : 10017 , 31609 , 31617 ,
+    ...
+    foreign key ( CDSCode ) references schools ( CDSCode )
+)
+
+TABLE " schools "
+(
+  CDSCode TEXT primary key , -- Example : "01316090000000" ,
+  "04755070000000" , "04755070433953" ,
+  NCESDist TEXT , -- This field represents the 7- digit National Center
+  for Educational Statistics ( NCES ) school
+  ...
+  LastUpdate DATE , -- Example : 2015 -06 -23 , 2015 -09 -01 , 2015 -06 -18 ,
+)
+
+
+Reminder of the SQL Question : Please list the phone numbers of the
+direct charter - funded schools that are opened after 2000/1/1.
+
+
+    The following are the two SQL queries written by the user along with
+     the sample results they generated . One is correct and one is wrong .
+     You need to decide which one is correct .
+
+1: SELECT DISTINCT T2 . Phone , T1 . CDSCode FROM frpm AS T1 INNER JOIN
+schools AS T2 ON T1 . CDSCode = T2 . CDSCode WHERE T1 .` Charter School (Y /
+N ) ` = 1 AND T2 . OpenDate > '2000 -01 -01 ' AND T1 . FundingType = ' Directly
+  funded '
+Results of 1 st SQL :
++ - - - - - - - - - - - - - - - - - - - - - -+ - - - - - - - - - - - - - - - - - - - - -+
+| Phone                                      | CDSCode                                  |
++ - - - - - - - - - - - - - - - - - - - - - -+ - - - - - - - - - - - - - - - - - - - - -+
+| (510) 596 -8901                            | 01100170109835                           |
+| (510) 563 -1504                            | 01100170118489                           |
+| (510) 146 -7526                            | 01100170130419                           |
++ - - - - - - - - - - - - - - - - - - - - - -+ - - - - - - - - - - - - - - - - - - - - -+
+2: SELECT T2 . Phone FROM frpm AS T1 INNER JOIN schools AS T2 ON T1 .
+CDSCode = T2 . CDSCode WHERE T1 .` Charter Funding Type ` = ' Directly
+funded ' AND T2 . OpenDate > '2000 -01 -01 '
+Results of 2 nd SQL :
++ - - - - - - - - - - - - - - - - - - - - - -+
+| Phone                                      |
++ - - - - - - - - - - - - - - - - - - - - - -+
+| None                                       |
+| (510) 596 -8901                            |
+| None                                       |
+| (510) 686 -4131                            |
+| (510) 452 -2063                            |
++ - - - - - - - - - - - - - - - - - - - - - -+
+
+Provide the number of the correct SQL .
+
+                                          2159
+Assistant :
+``` json
+{
+     " correct_sql ": "2"
+}
+```
+
+
+B        Latency and Computational Cost Analysis
+To evaluate the trade-off between latency and performance, we measured the inference time of our
+baseline model fgenM and compared it with various configurations in Table 2. All models are assumed to
+
+be preloaded into memory, and SQL generation is parallelized where no sequential dependencies exist.
+Our method incurs a nearly 1.7× increase in latency compared to the standalone model, but this results in
+a performance gain of nearly 10% on the BIRD Dev set, demonstrating an effective trade-off between
+inference speed and accuracy.
+   A direct latency comparison with other Text2SQL approaches in Table 1 is infeasible due to proprietary
+models and the unavailability of open-source implementations. Instead, we estimate the computational
+cost in FLOPs for the strongest baseline by assuming a fixed context length of 2048 tokens per model
+invocation. We utilize the calculate-flops.pytorch2 library to compute total FLOPs across all function
+calls. The results are summarized in Table 6.
+   Compared to the CHESS baseline, which employs a 70B LLaMA model with multiple queries, our
+method requires over 10 times less compute while achieving superior performance. This highlights the
+efficiency of leveraging additional test-time computation with smaller models to outperform larger models
+while reducing computational costs.
+
+           Model Family                            Params.   Dev EX%   Latency (rel. to baseline)   FLOPs (TFLOPS)
+             M
+           fgen                                      7B        56.4              1.00                    28.59
+             L
+           fgen                                      8B        54.1              0.89                    28.59
+             G
+           fgen                                      9B        55.0              1.10                    34.09
+             M      M
+           flink + fgen                              7B        61.3              1.24                    57.18
+             M      L
+           flink + fgen                              8B        60.0              1.21                    57.18
+             M      G
+           flink + fgen                              9B        60.8              1.28                    62.68
+             M          M    M            M
+           flink → {fgen  , fgen } → fmsc            7B        64.0              1.42                    114.36
+             M          L    L            M
+           flink → {fgen , fgen } → fmsc             8B        63.5              1.50                    114.36
+             M          G    G            M
+           flink → {fgen  , fgen } → fmsc            9B        62.7              1.53                    125.36
+             M          M    M      M        M
+           flink → {fgen , fgen , fgen } → fmsc      7B        64.8              1.55                    142.95
+             M          L    L      L        M
+           flink → {fgen , fgen , fgen } → fmsc      8B        64.1              1.54                    142.95
+             M          G    G      G        M
+           flink → {fgen  , fgen , fgen } → fmsc     9B        62.9              1.69                    159.45
+             M          M    L      G        M
+           flink → {fgen , fgen , fgen } → fmsc      9B        65.6              1.68                    148.45
+           CHESS+LLaMA-3                            70B        61.5              NA                     1682.28
+
+         Table 6: Comparison of latency and FLOPs across different model configurations on the BIRD dataset.
+
+
+
+
+    2
+        https://github.com/MrYxJ/calculate-flops.pytorch
+
+                                                                2160
+

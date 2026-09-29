@@ -1,12 +1,12 @@
 from pathlib import Path
 from typing import Dict
 
-TEMPLATE_DIR = Path("alphasql/templates")
+TEMPLATE_DIR = Path(__file__).resolve().parents[1] / "templates"
 
 TEMPLATE_DICT = {}
 
 for template_file in TEMPLATE_DIR.glob("*.txt"):
-    with open(template_file, "r") as f:
+    with open(template_file, "r", encoding="utf-8") as f:
         TEMPLATE_DICT[template_file.stem] = f.read()
 
 def get_prompt(template_name: str, template_args: Dict[str, str]) -> str:

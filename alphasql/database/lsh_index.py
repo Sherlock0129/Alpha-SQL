@@ -84,7 +84,6 @@ class LSHIndex:
             n_gram (int): The size of the n-gram, defaults to 3.
         """
         unique_values = cls.get_unique_database_values(database_schema)
-        print(unique_values)
         lsh_index = MinHashLSH(threshold=threshold, num_perm=signature_size)
         minhashes = {}
         total_unique_values_count = sum(len(column_values) for table_values in unique_values.values() for column_values in table_values.values())

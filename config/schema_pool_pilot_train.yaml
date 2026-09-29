@@ -1,0 +1,17 @@
+tasks_file_path: data/preprocessed/schema_pool/train/tasks.pkl
+subset_file_path: data/bird/schema_pool_pilot/train.json
+db_root_dir: data/bird/train/train_databases
+n_processes: 4
+max_rollout_steps: 2
+max_depth: 5
+exploration_constant: 1.414
+save_root_dir: results/schema_pool_pilot/train
+random_seed: 42
+mcts_model_kwargs:
+  model: qwen3-coder-flash
+  n: 1
+  top_p: 0.8
+  max_tokens: 2048
+  temperature: 0.8
+  n_strategy: multiple
+reward_model_kwargs: null

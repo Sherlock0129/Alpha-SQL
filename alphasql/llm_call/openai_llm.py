@@ -13,6 +13,12 @@ N_CALLING_STRATEGY_MULTIPLE = 'multiple'
 _requests = 0
 
 
+def reset_request_counter():
+    """Start a fresh bounded request budget for one independent task."""
+    global _requests
+    _requests = 0
+
+
 def call_openai(prompt, model, temperature=0.0, top_p=1.0, n=1,
                 max_tokens=512, stop=None, base_url=None, api_key=None,
                 n_strategy='multiple', cost_recorder=DEFAULT_COST_RECORDER):

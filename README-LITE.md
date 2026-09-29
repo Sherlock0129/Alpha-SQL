@@ -61,3 +61,132 @@ embedding 模型已改变，0.6 阈值仅沿用初始值，后续应单独评估
 
 预处理缓存仅供本次固定配置使用。更换模型、数据或检索参数时应使用新的缓存目录。
 当前 API Key 尚未配置，真实 API 与端到端五题结果待密钥提供后验证。
+
+## 阶段一：Schema-aware 轻量重排序实验
+
+该实验保持原 Schema Linker、MCTS 和候选池不变。它从每条候选路径读取原有
+`selected_schema_dict`（硬选择而非置信度），构造 SQL 结构、Schema 覆盖与外键连接、
+执行结果簇以及可选 MCTS 元数据，训练无额外机器学习依赖的 Logistic Regression。
+gold SQL 只用于生成执行等价标签，不进入特征。
+
+推荐使用互不重叠的训练候选和评估候选：
+
+```sh
+python -m alphasql.runner.schema_signal_experiment \
+  --train-results-dir results/train_candidates \
+  --train-data-path data/bird/train/train.json \
+  --eval-results-dir results/dev_candidates \
+  --eval-data-path data/bird/dev/dev.json \
+  --db-root-dir data/bird/train/train_databases \
+  --eval-db-root-dir data/bird/dev/dev_databases \
+  --output-dir results/schema_signal
+```
+
+如果暂时只有一套候选，可省略 `--eval-*` 参数，程序默认按数据库划分 80/20；
+数据库不足两个时才回退为按问题划分。同一问题的候选不会跨集合。正式结论仍应采用
+独立数据集或按数据库划分的交叉验证。
+
+输出包括：
+
+- `report.json`：execution-only、SQL+execution、+schema、+MCTS 四组消融的
+  Selection EX、Oracle EX、GapClosure，以及标准化特征系数；
+- `schema_aware_logistic.npz`：默认 Schema-aware 线性模型；
+- `predictions.jsonl`：评估集中每条候选的分数和标签。
+
+判断 Schema 信号是否有效，应主要比较 `schema_aware` 与 `sql_execution` 的
+`model_ex` 和 `gap_closure`。`schema_aware_mcts` 单列报告，因为一致性奖励可能与
+执行结果簇重复，不能用它替代 Schema 信号的消融结论。
+
+### BIRD 数据与候选池
+
+官方 Train/Dev 数据安装在 `data/bird/train` 和 `data/bird/dev`，安装脚本会防止
+Zip Slip、展开嵌套的数据库压缩包、核对题目和 SQLite 数据库数量并记录 SHA-256：
+
+```sh
+python script/install_bird.py train data/bird/_downloads/train.zip
+python script/install_bird.py dev data/bird/_downloads/dev.zip
+```
+
+阶段一默认从体积最小的 12 个 train 数据库和 6 个 dev 数据库中，按数据库
+（以及可用时的难度）均衡抽取 100/50 题。该边界避免首次实验被数百万唯一值的
+极端大库拖慢；正式扩大实验时可增加两个 `--*-db-count` 参数。以下命令可重新生成清单：
+
+```sh
+python script/prepare_schema_pool.py --train-size 100 --dev-size 50 --seed 42
+```
+
+配置好项目本地 `.env.local` 中的 `DASHSCOPE_API_KEY` 后，构建候选池：
+
+```sh
+python script/build_schema_pool.py all --split both
+```
+
+预处理结果位于 `data/preprocessed/schema_pool/{train,dev}`，每题 8 次 MCTS rollout
+产生的候选路径位于 `results/schema_pool/{train,dev}`。运行器会跳过已有的 `.pkl`，
+因此中断后可执行同一命令续跑；进入 MCTS 前会移除 gold SQL，避免标签泄漏。
+
+阶段一建议先运行数据库均衡的 pilot（train 24 题/12 库，dev 18 题/6 库，
+每题 2 次 rollout），先验证 Schema 信号再承担完整搜索成本：
+
+```sh
+python script/prepare_schema_pool.py --train-size 24 --dev-size 18 --seed 42 \
+  --train-db-count 12 --dev-db-count 6 --output-root data/bird/schema_pool_pilot
+python script/build_schema_pool.py generate --profile pilot --split both
+```
+
+pilot 候选保存到 `results/schema_pool_pilot/{train,dev}`，详细调用日志分别写入
+对应目录的 `generation.log`。请求上限按题重置，避免复用 worker 时前几题耗尽整个进程额度。
+
+需要形成非零 selector gap 时，使用 dense profile。该配置执行 4 次 rollout、
+真正限制搜索深度，并保留 generation/revision action 已经采样出的全部 SQL：
+
+```sh
+python script/build_schema_pool.py generate --profile dense --split both
+```
+
+dense 候选写入 `results/schema_pool_dense/{train,dev}`。它仍使用原 Schema Linker；
+同一问题采用 linker 输出众数作为稳定的 question-level schema，避免把“路径没有运行
+Schema Selection”误编码成“linker 不支持该 SQL”。
+
+运行 pilot 的 Logistic Regression 消融：
+
+```sh
+python -m alphasql.runner.schema_signal_experiment \
+  --train-results-dir results/schema_pool_pilot/train \
+  --train-data-path data/bird/schema_pool_pilot/train.json \
+  --eval-results-dir results/schema_pool_pilot/dev \
+  --eval-data-path data/bird/schema_pool_pilot/dev.json \
+  --db-root-dir data/bird/train/train_databases \
+  --eval-db-root-dir data/bird/dev/dev_databases \
+  --output-dir results/schema_signal_pilot
+```
+
+GPU pairwise MLP 使用 RankNet loss，并对可执行、Schema 覆盖高的错误 SQL 增加权重。
+hard negatives 只增强训练问题，内部验证集和 dev 保持真实候选：
+
+```sh
+python -m alphasql.runner.neural_schema_reranker \
+  --train-results-dir results/schema_pool_dense/train \
+  --train-data-path data/bird/schema_pool_pilot/train.json \
+  --eval-results-dir results/schema_pool_dense/dev \
+  --eval-data-path data/bird/schema_pool_pilot/dev.json \
+  --db-root-dir data/bird/train/train_databases \
+  --eval-db-root-dir data/bird/dev/dev_databases \
+  --output-dir results/neural_schema_reranker_dense \
+  --device cuda --epochs 300 --hard-negatives-per-question 4
+```
+
+正式结论应至少报告 3 个固定随机种子的均值和标准差；不得按 dev 选择最好 seed。
+
+候选生成完成后运行轻量重排序实验：
+
+```sh
+python -m alphasql.runner.schema_signal_experiment \
+  --train-results-dir results/schema_pool/train \
+  --train-data-path data/bird/schema_pool/train.json \
+  --eval-results-dir results/schema_pool/dev \
+  --eval-data-path data/bird/schema_pool/dev.json \
+  --db-root-dir data/bird/train/train_databases \
+  --eval-db-root-dir data/bird/dev/dev_databases \
+  --output-dir results/schema_signal
+```

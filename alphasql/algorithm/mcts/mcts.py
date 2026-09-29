@@ -7,6 +7,7 @@ import random
 from pathlib import Path
 from typing import Dict, Any, List
 import pickle
+import copy
 
 class MCTSSolver:
     def __init__(self,
@@ -39,6 +40,14 @@ class MCTSSolver:
     def expand(self, node: MCTSNode) -> List[MCTSNode]:
         assert node.children == [], f"Children nodes of node {node.node_type} before expansion is not empty"
         valid_action_space = get_valid_action_space_for_node(node)
+        # Honour the configured depth bound. Close an existing SQL branch near
+        # the limit, or force SQL generation instead of spending the remaining
+        # budget on another analysis-only action.
+        if node.depth >= self.max_depth - 1:
+            if node.node_type in (MCTSNodeType.SQL_GENERATION, MCTSNodeType.SQL_REVISION):
+                valid_action_space = [EndAction()]
+            else:
+                valid_action_space = [SQLGenerationAction()]
         for action in valid_action_space:
             action_nodes = action.create_children_nodes(node, self.llm_kwargs)
             node.children.extend(action_nodes)
@@ -58,9 +67,29 @@ class MCTSSolver:
         assert node.children == [], f"Node before simulation have non-empty children"
         current = node
         while not current.is_terminal():
+            if current.depth >= self.max_depth and current.node_type in (
+                MCTSNodeType.SQL_GENERATION, MCTSNodeType.SQL_REVISION
+            ):
+                return self._terminal_copy(current)
             self.expand(current)
             current = random.choice(current.children)
         return current
+
+    @staticmethod
+    def _terminal_copy(node: MCTSNode) -> MCTSNode:
+        """Materialize a terminal path without another model call or deep copy."""
+        terminal = copy.copy(node)
+        terminal.node_type = MCTSNodeType.END
+        terminal.parent_node = node
+        terminal.parent_action = EndAction()
+        terminal.depth = node.depth + 1
+        terminal.children = []
+        terminal.final_sql_query = (
+            node.sql_query if node.node_type == MCTSNodeType.SQL_GENERATION
+            else node.revised_sql_query
+        )
+        terminal.path_nodes = node.path_nodes + [terminal]
+        return terminal
 
     def backpropagate(self, node: MCTSNode):
         print("Backpropagate, Final SQL Query: ", node.final_sql_query)
@@ -84,10 +113,31 @@ class MCTSSolver:
             return end_nodes
     
     def find_all_valid_reasoning_paths(self, node: MCTSNode) -> List[List[MCTSNode]]:
-        end_nodes = self.find_all_end_nodes(node)
+        # Expansion often pays for several SQL-generation actions even though
+        # MCTS follows only one child to END. Preserve every generated/revised
+        # SQL as a reranker candidate instead of discarding those model calls.
+        candidates = []
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            if current.node_type == MCTSNodeType.END and current.final_sql_query:
+                candidates.append(current)
+            elif current.node_type in (MCTSNodeType.SQL_GENERATION, MCTSNodeType.SQL_REVISION):
+                sql = current.sql_query if current.node_type == MCTSNodeType.SQL_GENERATION else current.revised_sql_query
+                if sql:
+                    candidates.append(self._terminal_copy(current))
+            stack.extend(current.children)
+
+        # Exact duplicates overweight both training and majority voting. Keep
+        # the first path for each normalized SQL while retaining distinct SQLs
+        # that happen to share an execution result.
         reasoning_paths = []
-        for end_node in end_nodes:
-            reasoning_paths.append(end_node.path_nodes)
+        seen_sql = set()
+        for end_node in candidates:
+            key = " ".join(end_node.final_sql_query.split()).strip().lower()
+            if key and key not in seen_sql:
+                seen_sql.add(key)
+                reasoning_paths.append(end_node.path_nodes)
         return reasoning_paths
     
     def solve(self):
@@ -127,5 +177,3 @@ class MCTSSolver:
         print(f"Question ID: {self.task.question_id} done, Number of valid reasoning paths: {len(all_valid_reasoning_paths)}")
         with open(save_path, "wb") as f:
             pickle.dump(all_valid_reasoning_paths, f)
-
-        
