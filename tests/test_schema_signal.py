@@ -18,9 +18,14 @@ from alphasql.algorithm.selection.neural_reranker import (
 from alphasql.database.schema import ColumnSchema, DatabaseSchema, TableSchema
 from alphasql.runner.schema_signal_experiment import split_records
 from alphasql.runner.neural_schema_reranker import (
+    cluster_support_gated_scores,
     confidence_gated_scores,
     fuse_with_self_consistency,
     tune_fusion_alpha,
+)
+from alphasql.runner.hard_case_pairwise_experiment import (
+    prepare_split as prepare_hard_case_split,
+    question_kind,
 )
 
 
@@ -152,6 +157,60 @@ class SchemaSignalTest(unittest.TestCase):
              "features": {"exec_result_group_size": 1}},
         ]
         scores = confidence_gated_scores(records, [0.50, 0.55], threshold=0.1)
+        self.assertEqual(selection_metrics(records, scores)["model_ex"], 1.0)
+
+    def test_execution_features_preserve_self_consistency_signal(self):
+        features = extract_candidate_features(
+            "SELECT name FROM customers",
+            sample_schema(), {"customers"}, {("customers", "name")},
+            execution={
+                "success": True,
+                "group_size": 3,
+                "group_share": 0.75,
+                "group_rank": 1,
+                "group_rank_inverse": 1.0,
+                "group_ratio_to_top": 1.0,
+                "self_consistency_winner": True,
+            },
+        )
+        self.assertEqual(features["exec_result_group_size"], 3.0)
+        self.assertEqual(features["exec_result_group_rank_inverse"], 1.0)
+        self.assertEqual(features["exec_self_consistency_winner"], 1.0)
+
+    def test_hard_case_split_freezes_exactly_one_hundred_questions(self):
+        records = []
+        for question in range(160):
+            hard = question < 12
+            records.extend([
+                {
+                    "question_id": str(question), "db_id": f"db{question % 10}",
+                    "candidate_index": 0, "label": int(not hard),
+                    "features": {"exec_result_group_size": 2},
+                },
+                {
+                    "question_id": str(question), "db_id": f"db{question % 10}",
+                    "candidate_index": 1, "label": int(hard),
+                    "features": {"exec_result_group_size": 1},
+                },
+            ])
+        self.assertEqual(question_kind(records[:2]), "hard")
+        split = prepare_hard_case_split(records, seed=42)
+        self.assertEqual(split["counts"]["test"], 100)
+        self.assertEqual(split["counts"]["validation"], 40)
+        self.assertEqual(split["counts"]["test_hard"], 5)
+        self.assertEqual(split["counts"]["validation_hard"], 3)
+        self.assertTrue(set(split["test_ids"]).isdisjoint(split["train_ids"]))
+
+    def test_cluster_gate_does_not_override_a_better_supported_candidate(self):
+        records = [
+            {"question_id": "a", "candidate_index": 0, "label": 1,
+             "features": {"exec_result_group_size": 3}},
+            {"question_id": "a", "candidate_index": 1, "label": 0,
+             "features": {"exec_result_group_size": 1}},
+        ]
+        scores = cluster_support_gated_scores(
+            records, [0.1, 0.9], threshold=0.0, min_cluster_ratio=1.0
+        )
         self.assertEqual(selection_metrics(records, scores)["model_ex"], 1.0)
 
 

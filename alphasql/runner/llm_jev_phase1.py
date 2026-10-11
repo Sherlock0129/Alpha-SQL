@@ -257,6 +257,8 @@ def rerank_llm_pool(
 
 
 def _macro(rows: Sequence[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
+    if not rows:
+        return {"questions": 0}
     candidate_total = sum(row[f"{prefix}_candidate_count"] for row in rows)
     executable_total = sum(row[f"{prefix}_executable_count"] for row in rows)
     covered = sum(row[f"{prefix}_coverage"] for row in rows)
@@ -276,6 +278,8 @@ def _macro(rows: Sequence[Dict[str, Any]], prefix: str) -> Dict[str, Any]:
 
 
 def _bootstrap_delta(rows: Sequence[Dict[str, Any]], repeats: int = 10000) -> Dict[str, float]:
+    if not rows:
+        return {"jev_minus_llm": 0.0, "ci95_low": 0.0, "ci95_high": 0.0}
     randomizer = random.Random(42)
     differences = []
     for _ in range(repeats):
@@ -290,6 +294,42 @@ def _bootstrap_delta(rows: Sequence[Dict[str, Any]], repeats: int = 10000) -> Di
     }
 
 
+def summarize_usage_log(path: Path | None) -> Dict[str, Any] | None:
+    """Summarize successful provider calls without assuming a pricing table."""
+
+    if path is None or not path.exists():
+        return None
+    records = []
+    malformed_lines = 0
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            # Multiple MCTS workers append to one JSONL file. A process exit can
+            # leave one partial/interleaved tail record; keep the valid usage
+            # records and report the audit count instead of losing the run.
+            malformed_lines += 1
+    if not records:
+        return None
+    seconds = sorted(float(item.get("seconds") or 0.0) for item in records)
+    return {
+        "successful_api_calls": len(records),
+        "prompt_tokens": sum(int(item.get("prompt_tokens") or 0) for item in records),
+        "completion_tokens": sum(int(item.get("completion_tokens") or 0) for item in records),
+        "total_tokens": sum(
+            int(item.get("prompt_tokens") or 0) + int(item.get("completion_tokens") or 0)
+            for item in records
+        ),
+        "aggregate_api_seconds": round(sum(seconds), 3),
+        "mean_call_seconds": round(sum(seconds) / len(seconds), 3),
+        "p95_call_seconds": round(seconds[int(0.95 * (len(seconds) - 1))], 3),
+        "malformed_log_lines": malformed_lines,
+        "note": "Failed connection attempts have no provider usage record.",
+    }
+
+
 def evaluate(
     tasks: Sequence[Any],
     split: Mapping[str, Any],
@@ -299,6 +339,12 @@ def evaluate(
     db_root: Path,
     output_dir: Path,
     timeout: int,
+    report_title: str = "Alpha-SQL LLM vs Jev: Phase-One Results",
+    baseline_caveat: str = (
+        "Cached direct Alpha-SQL candidates are not full MCTS runs and contain no reliable "
+        "latency/token metadata."
+    ),
+    llm_usage: Mapping[str, Any] | None = None,
 ) -> Dict[str, Any]:
     split_by_id = {
         **{int(value): "calibration" for value in split["calibration_ids"]},
@@ -358,6 +404,7 @@ def evaluate(
 
         shared_path = shared_rerank_dir / f"{task.question_id}.json"
         shared_selected_ex = False
+        shared_selected_sql = None
         if shared_path.exists():
             shared = json.loads(shared_path.read_text(encoding="utf-8"))
             shared_index = shared.get("selected_index")
@@ -365,6 +412,11 @@ def evaluate(
                 shared_index is not None
                 and shared_index < len(llm_signatures)
                 and llm_signatures[shared_index] == gold_signature
+            )
+            shared_selected_sql = (
+                llm_sqls[shared_index]
+                if shared_index is not None and shared_index < len(llm_sqls)
+                else None
             )
         native_rerank_usage = {"input_tokens": 0, "output_tokens": 0}
         if (
@@ -380,6 +432,8 @@ def evaluate(
             "question_id": task.question_id,
             "split": split_by_id[task.question_id],
             "db_id": task.db_id,
+            "question": task.question,
+            "gold_sql": task.sql,
             "llm_table_precision": llm_tp,
             "llm_table_recall": llm_tr,
             "llm_column_precision": llm_cp,
@@ -422,6 +476,7 @@ def evaluate(
                 + native_rerank_usage.get("output_tokens", 0)
             ),
             "shared_jev_rerank_selected_ex": shared_selected_ex,
+            "shared_jev_rerank_selected_sql": shared_selected_sql,
             "shared_jev_rerank_ms": shared.get("elapsed_ms") if shared_path.exists() else None,
             "shared_jev_rerank_input_tokens": shared_usage.get("input_tokens", 0),
             "shared_jev_rerank_output_tokens": shared_usage.get("output_tokens", 0),
@@ -433,9 +488,12 @@ def evaluate(
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    metrics: Dict[str, Any] = {"split": split}
+    metrics: Dict[str, Any] = {"split": split, "llm_efficiency": llm_usage}
     for name in ("calibration", "evaluation"):
         partition = [row for row in rows if row["split"] == name]
+        if not partition:
+            metrics[name] = {"questions": 0}
+            continue
         paired = {
             "both_correct": sum(row["llm_selected_ex"] and row["jev_selected_ex"] for row in partition),
             "llm_only_correct": sum(row["llm_selected_ex"] and not row["jev_selected_ex"] for row in partition),
@@ -457,6 +515,24 @@ def evaluate(
                 "coverage": sum(row["llm_coverage"] for row in partition) / len(partition),
                 "self_consistency_ex": sum(row["llm_selected_ex"] for row in partition) / len(partition),
                 "jev_reranker_ex": sum(row["shared_jev_rerank_selected_ex"] for row in partition) / len(partition),
+                "paired_outcomes": {
+                    "both_correct": sum(
+                        row["llm_selected_ex"] and row["shared_jev_rerank_selected_ex"]
+                        for row in partition
+                    ),
+                    "self_consistency_only": sum(
+                        row["llm_selected_ex"] and not row["shared_jev_rerank_selected_ex"]
+                        for row in partition
+                    ),
+                    "jev_reranker_only": sum(
+                        not row["llm_selected_ex"] and row["shared_jev_rerank_selected_ex"]
+                        for row in partition
+                    ),
+                    "both_wrong": sum(
+                        not row["llm_selected_ex"] and not row["shared_jev_rerank_selected_ex"]
+                        for row in partition
+                    ),
+                },
                 "average_jev_rerank_ms": sum(row["shared_jev_rerank_ms"] for row in partition) / len(partition),
                 "jev_rerank_input_tokens": sum(row["shared_jev_rerank_input_tokens"] for row in partition),
                 "jev_rerank_output_tokens": sum(row["shared_jev_rerank_output_tokens"] for row in partition),
@@ -470,14 +546,24 @@ def evaluate(
         }
     errors = []
     for row in rows:
-        for prefix, system in (("llm", "alpha_sql_llm_direct"), ("jev", "jev_constrained")):
-            if row[f"{prefix}_selected_ex"]:
+        systems = (
+            ("llm", "mcts_self_consistency", row["llm_selected_ex"], row["llm_selected_sql"]),
+            ("jev", "jev_constrained", row["jev_selected_ex"], row["jev_selected_sql"]),
+            (
+                "llm", "jev_reranker_on_mcts",
+                row["shared_jev_rerank_selected_ex"],
+                row["shared_jev_rerank_selected_sql"],
+            ),
+        )
+        for prefix, system, selected_correct, selected_sql in systems:
+            if selected_correct:
                 continue
             coverage = row[f"{prefix}_coverage"]
             errors.append({
                 "question_id": row["question_id"],
                 "split": row["split"],
                 "db_id": row["db_id"],
+                "question": row["question"],
                 "system": system,
                 "category": "selection_error" if coverage else "candidate_coverage_miss",
                 "diagnostic": (
@@ -489,12 +575,13 @@ def evaluate(
                 ),
                 "table_recall": row[f"{prefix}_table_recall"],
                 "column_recall": row[f"{prefix}_column_recall"],
-                "selected_sql": row[f"{prefix}_selected_sql"],
+                "gold_sql": row["gold_sql"],
+                "selected_sql": selected_sql,
             })
     with (output_dir / "error_analysis.csv").open("w", newline="", encoding="utf-8") as handle:
         fields = [
-            "question_id", "split", "db_id", "system", "category", "diagnostic",
-            "table_recall", "column_recall", "selected_sql",
+            "question_id", "split", "db_id", "question", "system", "category",
+            "diagnostic", "table_recall", "column_recall", "gold_sql", "selected_sql",
         ]
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
@@ -509,9 +596,10 @@ def evaluate(
     jev_selection = evaluation_metrics["jev_candidate_pool_selection"]
     efficiency = evaluation_metrics["jev_efficiency"]
     report = [
-        "# Alpha-SQL LLM vs Jev: Phase-One Results", "",
-        "The primary result is the database-disjoint evaluation partition (18 executable-gold questions).", "",
-        "| Metric | Alpha-SQL LLM direct + self-consistency | Jev constrained |", "|---|---:|---:|",
+        f"# {report_title}", "",
+        f"The primary result is the frozen evaluation partition "
+        f"({len([row for row in rows if row['split'] == 'evaluation'])} executable-gold questions).", "",
+        "| Metric | LLM/MCTS candidate pool + self-consistency | Jev constrained |", "|---|---:|---:|",
         f"| Table precision | {llm_metrics['table_precision']:.3f} | {jev_metrics['table_precision']:.3f} |",
         f"| Table recall | {llm_metrics['table_recall']:.3f} | {jev_metrics['table_recall']:.3f} |",
         f"| Column precision | {llm_metrics['column_precision']:.3f} | {jev_metrics['column_precision']:.3f} |",
@@ -522,8 +610,10 @@ def evaluate(
         f"Jev - LLM EX difference: {evaluation_metrics['paired_bootstrap']['jev_minus_llm']:.3f} "
         f"(paired bootstrap 95% CI {evaluation_metrics['paired_bootstrap']['ci95_low']:.3f} to "
         f"{evaluation_metrics['paired_bootstrap']['ci95_high']:.3f}).", "",
-        f"On the fixed LLM candidate pool, self-consistency EX and Jev reranker EX were both "
-        f"{shared_metrics['self_consistency_ex']:.3f}; this pilot shows no selector lift.", "",
+        f"On the fixed LLM candidate pool, self-consistency EX was "
+        f"{shared_metrics['self_consistency_ex']:.3f} and Jev reranker EX was "
+        f"{shared_metrics['jev_reranker_ex']:.3f} "
+        f"(delta {shared_metrics['jev_reranker_ex'] - shared_metrics['self_consistency_ex']:+.3f}).", "",
         f"On the native Jev pool, top-beam/self-consistency EX was {jev_selection['top_beam_ex']:.3f}, "
         f"Jev reranking reached {jev_selection['jev_reranker_ex']:.3f}, and the candidate oracle was "
         f"{jev_selection['oracle_ex']:.3f}.", "",
@@ -531,11 +621,17 @@ def evaluate(
         f"{efficiency['total_input_tokens']} input plus {efficiency['total_output_tokens']} output tokens "
         "on the evaluation partition.", "",
         "Caveats:", "",
-        "- Cached direct Alpha-SQL candidates are not full MCTS runs and contain no reliable latency/token metadata.",
+        f"- {baseline_caveat}",
         "- The slice excludes SQL outside the current constrained compiler.",
-        "- Calibration databases were used during smoke-test debugging and are excluded from the primary result.",
-        "- One nominal evaluation item was excluded because its gold SQL references a missing database column.",
+        "- LLM schema precision/recall uses schema-selection evidence observable in saved reasoning paths; paths that skip schema selection lower these figures.",
+        "- The sample is small, so effect sizes are more informative than a standalone percentage.",
     ]
+    if llm_usage:
+        report[report.index("Caveats:")] = (
+            f"The LLM/MCTS run recorded {llm_usage['successful_api_calls']} successful API calls, "
+            f"{llm_usage['total_tokens']} total tokens, and "
+            f"{llm_usage['aggregate_api_seconds']:.1f} aggregate API-seconds.\n\nCaveats:"
+        )
     (output_dir / "report.md").write_text("\n".join(report) + "\n", encoding="utf-8")
     return metrics
 
@@ -547,10 +643,10 @@ def main(args: argparse.Namespace) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     settings = JevSettings.from_environment()
     config = {
-        "experiment": "alpha_sql_llm_vs_jev_phase1",
-        "llm_system": "cached Alpha-SQL direct candidates plus execution self-consistency",
+        "experiment": args.experiment_name,
+        "llm_system": args.llm_system,
         "llm_candidate_directory": str(Path(args.llm_candidates)),
-        "full_mcts_baseline": False,
+        "full_mcts_baseline": args.full_mcts_baseline,
         "cached_llm_generation_manifest_available": False,
         "jev_model": settings.model,
         "jev_schema_threshold": settings.schema_threshold,
@@ -558,12 +654,18 @@ def main(args: argparse.Namespace) -> None:
         "jev_beam_width": settings.beam_width,
         "max_candidates_for_shared_rerank": args.max_candidates,
         "execution_timeout": args.execution_timeout,
+        "split_file": args.split_file,
+        "llm_usage_log": args.llm_usage_log,
     }
     (output_dir / "config.json").write_text(
         json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     split_path = output_dir / "split.json"
-    split = prepare_split(tasks, Path(args.db_root), args.execution_timeout)
+    split = (
+        json.loads(Path(args.split_file).read_text(encoding="utf-8"))
+        if args.split_file else
+        prepare_split(tasks, Path(args.db_root), args.execution_timeout)
+    )
     split_path.write_text(json.dumps(split, indent=2) + "\n", encoding="utf-8")
     if args.mode == "prepare":
         print(split)
@@ -577,7 +679,8 @@ def main(args: argparse.Namespace) -> None:
     metrics = evaluate(
         tasks, split, Path(args.llm_candidates), Path(args.jev_results),
         Path(args.shared_rerank_dir), Path(args.db_root), output_dir,
-        args.execution_timeout,
+        args.execution_timeout, args.report_title, args.baseline_caveat,
+        summarize_usage_log(Path(args.llm_usage_log)) if args.llm_usage_log else None,
     )
     print(json.dumps(metrics["evaluation"], indent=2))
 
@@ -593,4 +696,17 @@ if __name__ == "__main__":
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--max-candidates", type=int, default=8)
     parser.add_argument("--execution-timeout", type=int, default=15)
+    parser.add_argument("--split-file")
+    parser.add_argument("--llm-usage-log")
+    parser.add_argument("--experiment-name", default="alpha_sql_llm_vs_jev_phase1")
+    parser.add_argument(
+        "--llm-system",
+        default="cached Alpha-SQL direct candidates plus execution self-consistency",
+    )
+    parser.add_argument("--full-mcts-baseline", action="store_true")
+    parser.add_argument("--report-title", default="Alpha-SQL LLM vs Jev: Phase-One Results")
+    parser.add_argument(
+        "--baseline-caveat",
+        default="Cached direct Alpha-SQL candidates are not full MCTS runs and contain no reliable latency/token metadata.",
+    )
     main(parser.parse_args())

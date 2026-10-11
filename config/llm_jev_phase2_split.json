@@ -1,0 +1,22 @@
+{
+  "definition": {
+    "name": "fresh multi-table constrained slice",
+    "single_select_expression": true,
+    "aggregates": ["none", "count", "sum", "avg", "min", "max"],
+    "max_non_join_filters": 1,
+    "inner_fk_joins": true,
+    "allowed_predicates": ["=", "!=", ">", ">=", "<", "<=", "LIKE"],
+    "excluded": [
+      "subquery", "window", "AND/OR filters", "set operation", "CTE", "CASE",
+      "GROUP BY", "HAVING", "ORDER BY", "LIMIT", "IN", "BETWEEN", "IS"
+    ]
+  },
+  "calibration_databases": [],
+  "calibration_ids": [],
+  "evaluation_ids": [1602, 1658, 3066, 3074, 3107, 5589, 5601, 5676, 6919, 6967, 8864, 8907],
+  "calibration_count": 0,
+  "evaluation_count": 12,
+  "excluded_non_executable_gold": [],
+  "database_disjoint_from_phase1": true,
+  "frozen_before_phase2_api_runs": true
+}

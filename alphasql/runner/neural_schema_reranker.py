@@ -81,6 +81,66 @@ def tune_confidence_threshold(validation_records, validation_scores, threshold_g
     return best["threshold"], trials
 
 
+def cluster_support_gated_scores(records, neural_scores, threshold, min_cluster_ratio):
+    """Let the neural model break sufficiently supported execution-cluster ties.
+
+    A ratio of 1.0 restricts changes to candidates in the largest execution
+    cluster.  This preserves the core self-consistency signal while replacing
+    its arbitrary candidate-index tie break with supervised ranking.
+    """
+
+    grouped = defaultdict(list)
+    for index, (record, score) in enumerate(zip(records, neural_scores)):
+        grouped[str(record["question_id"])].append((index, record, float(score)))
+    selected_scores = np.zeros(len(records), dtype=np.float64)
+    for candidates in grouped.values():
+        baseline = max(candidates, key=lambda item: (
+            item[1]["features"].get("exec_result_group_size", 0),
+            -item[1].get("candidate_index", 0),
+        ))
+        top_size = float(baseline[1]["features"].get("exec_result_group_size", 0))
+        eligible = [
+            item for item in candidates
+            if float(item[1]["features"].get("exec_result_group_size", 0))
+            >= top_size * float(min_cluster_ratio)
+        ]
+        neural = max(eligible, key=lambda item: (
+            item[2], -item[1].get("candidate_index", 0)
+        ))
+        margin = neural[2] - baseline[2]
+        selected = neural if neural[0] != baseline[0] and margin >= threshold else baseline
+        selected_scores[selected[0]] = 1.0
+    return selected_scores
+
+
+def tune_cluster_support_gate(
+    validation_records, validation_scores, threshold_grid, cluster_ratio_grid
+):
+    trials = []
+    for ratio in cluster_ratio_grid:
+        for threshold in threshold_grid:
+            metrics = selection_metrics(
+                validation_records,
+                cluster_support_gated_scores(
+                    validation_records, validation_scores, threshold, ratio
+                ),
+            )
+            trials.append({
+                "min_cluster_ratio": float(ratio),
+                "threshold": float(threshold),
+                **metrics,
+            })
+    # For equal validation EX, preserve more cluster support and demand a
+    # larger neural margin.
+    best = max(
+        trials,
+        key=lambda row: (
+            row["model_ex"], row["min_cluster_ratio"], row["threshold"]
+        ),
+    )
+    return best["min_cluster_ratio"], best["threshold"], trials
+
+
 def run_model(name, groups, train_records, validation_records, evaluation_records, args, output_dir):
     train_x, train_y, validation_x, names = aligned_features(train_records, validation_records, groups)
     evaluation_x = np.asarray([

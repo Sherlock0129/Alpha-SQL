@@ -105,11 +105,22 @@ def build_records(
             pending.append((index, path, final_node, sql, execution))
         counts = Counter(entry[4]["signature"] for entry in pending if entry[4]["success"])
         successful = sum(counts.values())
+        ranked_group_sizes = sorted(set(counts.values()), reverse=True)
+        group_rank = {size: rank + 1 for rank, size in enumerate(ranked_group_sizes)}
+        top_group_size = ranked_group_sizes[0] if ranked_group_sizes else 0
         positive_seeds = []
         seen_sql = {sql.strip().lower() for _, _, _, sql, _ in pending}
         for index, path, final_node, sql, execution in pending:
             group_size = counts.get(execution["signature"], 0) if execution["success"] else 0
-            execution.update({"group_size": group_size, "group_share": group_size / successful if successful else 0.0})
+            rank = group_rank.get(group_size, len(ranked_group_sizes) + 1) if group_size else 0
+            execution.update({
+                "group_size": group_size,
+                "group_share": group_size / successful if successful else 0.0,
+                "group_rank": rank,
+                "group_rank_inverse": 1.0 / rank if rank else 0.0,
+                "group_ratio_to_top": group_size / top_group_size if top_group_size else 0.0,
+                "self_consistency_winner": bool(group_size and group_size == top_group_size),
+            })
             path_linked_tables, _ = extract_linked_schema(path)
             linked_tables, linked_columns = global_linked_tables, global_linked_columns
             mcts = {
@@ -147,6 +158,17 @@ def build_records(
             gold_execution.update({
                 "group_size": gold_group_size,
                 "group_share": gold_group_size / successful if successful else 0.0,
+                "group_rank": group_rank.get(gold_group_size, 0),
+                "group_rank_inverse": (
+                    1.0 / group_rank[gold_group_size]
+                    if gold_group_size in group_rank else 0.0
+                ),
+                "group_ratio_to_top": (
+                    gold_group_size / top_group_size if top_group_size else 0.0
+                ),
+                "self_consistency_winner": bool(
+                    gold_group_size and gold_group_size == top_group_size
+                ),
             })
             gold_mcts = {
                 "consistency_score": 0.0,
@@ -191,7 +213,14 @@ def build_records(
                 execution = _execution_summary(cached_execute_sql_with_timeout(str(db_path), mutated_sql))
                 if not execution["success"] or execution["signature"] == gold["signature"]:
                     continue
-                execution.update({"group_size": 1, "group_share": 0.0})
+                execution.update({
+                    "group_size": 1,
+                    "group_share": 0.0,
+                    "group_rank": 0,
+                    "group_rank_inverse": 0.0,
+                    "group_ratio_to_top": 0.0,
+                    "self_consistency_winner": False,
+                })
                 all_records.append({
                     "question_id": question_id,
                     "db_id": db_id,

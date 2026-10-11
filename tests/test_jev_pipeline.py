@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
+from types import SimpleNamespace
 
 from alphasql.algorithm.compiler.beam_search import QueryPlanBeamSearch
 from alphasql.algorithm.compiler.query_plan import (
@@ -38,6 +39,7 @@ from alphasql.jev.client import JevClient
 from alphasql.jev.models import ChoiceQuestion, NoulQuestion, ScoreQuestion
 from alphasql.jev.runtime import JevSettings
 from alphasql.runner.jev_candidate_runner import JevCandidateRunner, retrieve_exact_question_values
+from alphasql.runner.prepare_llm_jev_300 import select_exact_tasks
 
 
 def sample_schema():
@@ -227,6 +229,24 @@ class JevRunnerIntegrationTest(unittest.TestCase):
             values = retrieve_exact_question_values(path, schema, "Show the item named Ada")
         self.assertEqual(values["items"]["name"], ["Ada"])
 
+    def test_exact_question_value_retrieval_keeps_numeric_literal_under_phrase_cap(self):
+        schema = DatabaseSchema(db_id="items", tables={
+            "items": TableSchema(table_name="items", columns={
+                "quantity": ColumnSchema(original_column_name="quantity", column_type="INTEGER"),
+            })
+        })
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "items.sqlite"
+            with closing(sqlite3.connect(path)) as connection:
+                connection.execute("CREATE TABLE items (quantity INTEGER)")
+                connection.executemany("INSERT INTO items(quantity) VALUES (?)", [(5,), (18,), (42,)])
+                connection.commit()
+            long_question = " ".join(f"descriptiveword{index}" for index in range(80)) + " exactly 18"
+            values = retrieve_exact_question_values(
+                path, schema, long_question, max_phrases=16
+            )
+        self.assertEqual(values["items"]["quantity"], [18])
+
     def test_mocked_vertical_slice_selects_executable_sql(self):
         schema = DatabaseSchema(db_id="items", tables={
             "items": TableSchema(table_name="items", columns={
@@ -274,6 +294,21 @@ class JevRunnerIntegrationTest(unittest.TestCase):
         self.assertIn('"name"', result.selected_sql)
         self.assertFalse(result.uncertain)
         self.assertEqual(result.to_selection_payload()["question_id"], 7)
+
+
+class ExperimentPreparationTest(unittest.TestCase):
+    def test_exact_task_selection_replaces_non_executable_primary_rows(self):
+        primary = [SimpleNamespace(question_id=value) for value in (1, 2, 3)]
+        fallback = [SimpleNamespace(question_id=value) for value in (3, 5, 4)]
+        selected, excluded, replacements = select_exact_tasks(
+            primary,
+            fallback,
+            lambda task: task.question_id != 2,
+            size=3,
+        )
+        self.assertEqual([task.question_id for task in selected], [1, 3, 4])
+        self.assertEqual(excluded, [2])
+        self.assertEqual(replacements, [4])
 
 
 if __name__ == "__main__":

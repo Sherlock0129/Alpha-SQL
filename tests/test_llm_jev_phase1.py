@@ -1,10 +1,13 @@
 import unittest
 from types import SimpleNamespace
+import tempfile
+from pathlib import Path
 
 from alphasql.runner.llm_jev_phase1 import (
     _self_consistency,
     is_supported_slice,
     prepare_split,
+    summarize_usage_log,
 )
 
 
@@ -33,6 +36,21 @@ class PhaseOneComparisonTest(unittest.TestCase):
         self.assertEqual(_self_consistency([a, b, a, empty], [1, 1, 1, 0]), 0)
         self.assertEqual(_self_consistency([empty, empty], [0, 0]), 0)
         self.assertIsNone(_self_consistency([None], [0]))
+
+    def test_usage_log_summary_counts_successful_calls_and_tokens(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "usage.jsonl"
+            path.write_text(
+                '{"seconds": 1.0, "prompt_tokens": 10, "completion_tokens": 2}\n'
+                '}\n'
+                '{"seconds": 3.0, "prompt_tokens": 20, "completion_tokens": 4}\n',
+                encoding="utf-8",
+            )
+            summary = summarize_usage_log(path)
+        self.assertEqual(summary["successful_api_calls"], 2)
+        self.assertEqual(summary["total_tokens"], 36)
+        self.assertEqual(summary["aggregate_api_seconds"], 4.0)
+        self.assertEqual(summary["malformed_log_lines"], 1)
 
 
 if __name__ == "__main__":

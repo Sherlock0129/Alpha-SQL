@@ -282,6 +282,19 @@ def extract_candidate_features(
         "exec_duplicate_ratio": float(execution.get("duplicate_ratio", 0.0) or 0.0),
         "exec_result_group_size": float(execution.get("group_size", 0) or 0),
         "exec_result_group_share": float(execution.get("group_share", 0.0) or 0.0),
+        # Preserve execution self-consistency as explicit candidate features.
+        # The supervised reranker is a residual selector, not a replacement
+        # that must relearn cluster support from unrelated SQL features.
+        "exec_result_group_rank": float(execution.get("group_rank", 0.0) or 0.0),
+        "exec_result_group_rank_inverse": float(
+            execution.get("group_rank_inverse", 0.0) or 0.0
+        ),
+        "exec_result_group_ratio_to_top": float(
+            execution.get("group_ratio_to_top", 0.0) or 0.0
+        ),
+        "exec_self_consistency_winner": float(
+            bool(execution.get("self_consistency_winner", False))
+        ),
     })
 
     mcts = mcts or {}

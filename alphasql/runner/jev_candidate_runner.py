@@ -55,11 +55,20 @@ def retrieve_exact_question_values(
     phrases: List[str] = []
     seen = set()
     quoted = re.findall(r"['\"]([^'\"]+)['\"]", f"{question} {evidence}")
-    for phrase in quoted + [
+    # Long questions can produce hundreds of n-grams.  Put atomic literal-like
+    # tokens before those n-grams so a limit cannot silently drop values such as
+    # ages, years, counts, or short entity names mentioned near the end.
+    numeric_tokens = [
+        token for token in tokens
+        if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", token)
+    ]
+    content_tokens = [token for token in tokens if token.lower() not in _STOP_WORDS]
+    multiword_phrases = [
         " ".join(tokens[start:start + size])
-        for size in range(min(5, len(tokens)), 0, -1)
+        for size in range(min(5, len(tokens)), 1, -1)
         for start in range(0, len(tokens) - size + 1)
-    ]:
+    ]
+    for phrase in quoted + numeric_tokens + content_tokens + multiword_phrases:
         normalized = phrase.strip().strip(".,?!;:")
         key = normalized.lower()
         if not normalized or key in seen or (len(normalized.split()) == 1 and key in _STOP_WORDS):
@@ -291,10 +300,14 @@ def main(args: argparse.Namespace) -> None:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     failures = []
+    skipped = 0
     for task in tqdm(tasks, desc="Jev constrained candidates"):
+        path = output_dir / f"{task.question_id}.json"
+        if path.exists() and not args.overwrite:
+            skipped += 1
+            continue
         try:
             result = run_task(runner, task, args.database_root_dir)
-            path = output_dir / f"{task.question_id}.json"
             path.write_text(
                 json.dumps(result.to_selection_payload(), ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
@@ -308,7 +321,12 @@ def main(args: argparse.Namespace) -> None:
     (output_dir / "failures.json").write_text(
         json.dumps(failures, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print({"completed": len(tasks) - len(failures), "failed": len(failures), "output": str(output_dir)})
+    print({
+        "completed": len(tasks) - skipped - len(failures),
+        "skipped": skipped,
+        "failed": len(failures),
+        "output": str(output_dir),
+    })
 
 
 if __name__ == "__main__":
@@ -321,4 +339,8 @@ if __name__ == "__main__":
     parser.add_argument("--limit", type=int)
     parser.add_argument("--execution-timeout", type=int, default=60)
     parser.add_argument("--max-literal-questions", type=int, default=64)
+    parser.add_argument(
+        "--overwrite", action="store_true",
+        help="Regenerate existing result files instead of resuming around them.",
+    )
     main(parser.parse_args())
