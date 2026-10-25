@@ -8,19 +8,27 @@
 自然语言问题 + evidence + Schema
           │
           ▼
-Direct LLM 生成（全 Schema / Schema Selection）或读取冻结候选池
+Direct LLM 初轮生成（全 Schema / Schema Selection）或读取冻结候选池
           │
           ▼
 SQL 规范化去重 → SQLite 执行校验（空结果仍有效）
           │
           ▼
-JEV 同时回答两个不同的问题
+JEV 同时回答两类正确性问题和四类诊断问题
   pool_covered: 候选集中是否至少有一条完全正确？
   candidate_i: 第 i 条 SQL 是否完全正确？
+  gap_schema / projection / filters / logic: 若有错，可能错在哪里？
           │
-          ├─ 候选集覆盖判断低 → 在预算内再生成一轮
+          ├─ 覆盖或候选置信度低 → 根据诊断决定下一轮动作
+          │    schema 问题 → 从全 Schema 重新选表/列 → 重新生成 SQL
+          │    投影/过滤/逻辑问题 → 带原 SQL 与所选 Schema 修订
+          │    诊断不明显 → 带去重提示重新探索两条生成路径
           └─ 达到阈值或预算耗尽 → 选最高候选正确率
 ```
+
+这是逐轮闭环：生成器返回 SQL 及其来源路径、所选表；选择器执行校验后把这些信息连同问题和 Schema 送给 JEV；下一轮的 Schema Selection 或 SQL Revision 使用 JEV 诊断和最佳候选。诊断只是模型判断，不是确定的错误标签。执行错误（例如缺表、缺列）可以在无可执行候选时触发重新选 Schema。`--generator direct` 才会实际使用反馈；`--generator pool` 只按顺序揭示已经冻结的 `.pkl` 候选，因此只能评估停止与选择，不能验证反馈生成效果。
+
+当前 Direct 生成器复用 Alpha-SQL 的 `SchemaSelectionAction`、`SQLGenerationAction`、`SQLRevisionAction`，初轮会尝试全 Schema 和选后 Schema 两路，后续按反馈选择路径；它没有启动 MCTS 搜索。仓库的 DeepEye 多路径实现位于独立的 `deepeye/`，此入口尚未调用它。完整 Alpha-SQL MCTS、Direct 候选生成、DeepEye 基线和本选择器是不同的运行入口。
 
 推理前把 `Task.sql` 清空。JEV 只看到问题、证据、Schema、候选 SQL 和执行摘要；标准答案只在离线 `label` 阶段使用。无可执行 SQL 时，候选集覆盖值固定为 0，不能让校准器把它抬高。执行成功但返回空行是有效候选。
 
@@ -50,7 +58,7 @@ python -m alphasql.runner.new_selector run `
   --per-round 8 --max-rounds 3 --limit 5
 ```
 
-每题输出 `question_id.json`，包含逐轮候选数、覆盖估计、候选正确估计、最终 SQL、是否不确定和执行摘要。`failures.json` 记录失败题；已有逐题结果默认跳过，可用 `--overwrite` 重跑。增量生成需要模型调用，费用与请求量取决于候选数及轮数。
+每题输出 `question_id.json`，包含逐轮候选数、覆盖估计、候选正确估计、诊断值、反馈动作、每条 SQL 的来源路径和所选表、最终 SQL、是否不确定及执行摘要。Direct 生成的每轮目录还保存候选 `.pkl` 和下一轮输入的 `feedback.json`。`failures.json` 记录失败题；已有逐题结果默认跳过，可用 `--overwrite` 重跑。增量生成需要模型调用，费用与请求量取决于候选数及轮数。
 
 ## 离线标注、课程训练与校准
 

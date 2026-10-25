@@ -22,6 +22,7 @@ import sqlglot
 from alphasql.algorithm.compiler.validation import validate_sql
 from alphasql.algorithm.selection.dual_calibration import DualCalibrator, fit_dual
 from alphasql.algorithm.selection.dual_confidence import JevPoolJudge, PoolJudgement
+from alphasql.algorithm.selection.generation_feedback import GenerationFeedback, choose_feedback
 from alphasql.algorithm.selection.schema_signal import result_signature
 from alphasql.database.database_manager import DatabaseManager
 from alphasql.jev.client import JevClient
@@ -31,11 +32,19 @@ from alphasql.runner.task import Task
 
 
 class CandidateGenerator(Protocol):
-    def generate(self, task: Task, round_index: int) -> Sequence[str]: ...
+    def generate(self, task: Task, round_index: int,
+                 feedback: GenerationFeedback | None = None) -> Sequence["GeneratedSQL" | str]: ...
 
 
-def _path_sqls(paths: Any) -> list[str]:
-    sqls = []
+@dataclass(frozen=True)
+class GeneratedSQL:
+    sql: str
+    route: str
+    selected_tables: tuple[str, ...] = ()
+
+
+def _path_candidates(paths: Any, route: str | None = None) -> list[GeneratedSQL]:
+    sqls: list[GeneratedSQL] = []
     for path in paths:
         if not path:
             continue
@@ -44,7 +53,9 @@ def _path_sqls(paths: Any) -> list[str]:
                or getattr(node, "revised_sql_query", None)
                or getattr(node, "sql_query", None))
         if isinstance(sql, str) and sql.strip():
-            sqls.append(sql.strip())
+            selected = tuple((getattr(node, "selected_schema_dict", None) or {}).keys())
+            sqls.append(GeneratedSQL(sql.strip(), route or (
+                "linked_schema" if selected else "full_schema"), selected))
     return sqls
 
 
@@ -56,11 +67,13 @@ class FrozenPoolGenerator:
             raise ValueError("per_round must be positive")
         self.candidate_dir = Path(candidate_dir)
         self.per_round = per_round
+        self.supports_feedback = False
 
-    def generate(self, task: Task, round_index: int) -> Sequence[str]:
+    def generate(self, task: Task, round_index: int,
+                 feedback: GenerationFeedback | None = None) -> Sequence[GeneratedSQL]:
         path = self.candidate_dir / f"{task.question_id}.pkl"
         with path.open("rb") as handle:
-            sqls = _path_sqls(pickle.load(handle))
+            sqls = _path_candidates(pickle.load(handle))
         start = round_index * self.per_round
         return sqls[start:start + self.per_round]
 
@@ -74,8 +87,10 @@ class DirectLLMGenerator:
             raise ValueError("samples must be positive")
         self.db_root, self.work_dir, self.model = db_root, Path(work_dir), model
         self.samples, self.temperature = samples, temperature
+        self.supports_feedback = True
 
-    def generate(self, task: Task, round_index: int) -> Sequence[str]:
+    def generate(self, task: Task, round_index: int,
+                 feedback: GenerationFeedback | None = None) -> Sequence[GeneratedSQL]:
         if not task.table_schema_dict:
             raise ValueError("Direct generation needs a preprocessed Task with table_schema_dict")
         from alphasql.runner.direct_candidate_runner import generate_one
@@ -84,13 +99,77 @@ class DirectLLMGenerator:
         kwargs = {"model": self.model, "n": 1, "top_p": 0.95,
                   "max_tokens": 4096, "temperature": self.temperature,
                   "n_strategy": "multiple"}
-        summary = generate_one((task.model_copy(update={"sql": None}), self.db_root,
-                                str(round_dir), kwargs, self.samples))
+        if feedback:
+            (round_dir / "feedback.json").write_text(
+                json.dumps(feedback.to_dict(), ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8")
+        if feedback and feedback.action in {"relink", "revise"}:
+            return self._feedback_generation(task, round_dir, kwargs, feedback)
+        hint = task.evidence
+        if feedback:
+            hint = (hint + "\n\n" + feedback.hint()).strip()
+        prompt_task = task.model_copy(update={"sql": None, "evidence": hint})
+        summary = generate_one((prompt_task, self.db_root, str(round_dir),
+                                kwargs, self.samples))
         path = round_dir / f"{task.question_id}.pkl"
         if not path.exists():
             raise RuntimeError(f"SQL generation failed: {summary['warnings']}")
         with path.open("rb") as handle:
-            return _path_sqls(pickle.load(handle))
+            return _path_candidates(pickle.load(handle))
+
+    def _feedback_generation(self, task: Task, round_dir: Path,
+                             kwargs: dict[str, Any],
+                             feedback: GenerationFeedback) -> Sequence[GeneratedSQL]:
+        import copy
+        import alphasql.algorithm.mcts.mcts_action as actions
+        from alphasql.algorithm.mcts.mcts_action import (
+            MCTSNodeType, SQLGenerationAction, SQLRevisionAction, SchemaSelectionAction,
+        )
+        from alphasql.database.utils import build_table_ddl_statement
+        from alphasql.llm_call.runtime import configure_environment
+        from alphasql.runner.direct_candidate_runner import (
+            _root_node, deduplicate_paths, terminalize,
+        )
+
+        configure_environment()
+        actions.SQL_GENERATION_LLM_KWARGS_N = self.samples
+        actions.SQL_REVISION_LLM_KWARGS_N = self.samples
+        root = _root_node(task.model_copy(update={"sql": None}), self.db_root)
+        root.hint = (root.hint + "\n\n" + feedback.hint()).strip()
+        paths = []
+        if feedback.action == "relink":
+            for linked in SchemaSelectionAction().create_children_nodes(root, kwargs):
+                paths.extend(terminalize(node) for node in
+                             SQLGenerationAction().create_children_nodes(linked, kwargs))
+        else:
+            if not feedback.anchor_sql:
+                raise ValueError("SQL revision needs an anchor SQL")
+            anchor = copy.copy(root)
+            anchor.node_type = MCTSNodeType.SQL_GENERATION
+            anchor.parent_node = root
+            anchor.parent_action = SQLGenerationAction()
+            anchor.depth = root.depth + 1
+            anchor.sql_query = feedback.anchor_sql
+            anchor.path_nodes = root.path_nodes + [anchor]
+            selected = {name: task.table_schema_dict[name]
+                        for name in feedback.anchor_schema_tables
+                        if name in task.table_schema_dict}
+            if selected:
+                anchor.selected_schema_dict = selected
+                anchor.selected_schema_context = "\n".join(
+                    build_table_ddl_statement(
+                        table.to_dict(), add_value_description=True,
+                        add_column_description=True, add_value_examples=True,
+                        add_expanded_column_name=True)
+                    for table in selected.values())
+            paths.extend(terminalize(node) for node in
+                         SQLRevisionAction().create_children_nodes(anchor, kwargs))
+        paths = deduplicate_paths(paths)
+        if not paths:
+            raise RuntimeError(f"{feedback.action} produced no SQL candidates")
+        with (round_dir / f"{task.question_id}.pkl").open("wb") as handle:
+            pickle.dump(paths, handle)
+        return _path_candidates(paths, route=feedback.action)
 
 
 def _canonical(sql: str) -> str:
@@ -147,12 +226,19 @@ class AdaptiveSQLSelector:
         seen: set[str] = set()
         rounds: list[dict[str, Any]] = []
         last: PoolJudgement | None = None
+        feedback: GenerationFeedback | None = None
         usage_total = {"input_tokens": 0, "output_tokens": 0}
         generation_task = task.model_copy(update={"sql": None})
         for round_index in range(self.settings.max_rounds):
-            generated = self.generator.generate(generation_task, round_index)
+            applied_feedback = (feedback if getattr(self.generator, "supports_feedback", True)
+                                else None)
+            generated = self.generator.generate(generation_task, round_index,
+                                                applied_feedback)
             new_count = 0
-            for sql in generated:
+            for generated_sql in generated:
+                item = (generated_sql if isinstance(generated_sql, GeneratedSQL)
+                        else GeneratedSQL(generated_sql, "external"))
+                sql = item.sql
                 canonical = _canonical(sql)
                 if not canonical or canonical in seen:
                     continue
@@ -162,6 +248,8 @@ class AdaptiveSQLSelector:
                 execution = validate_sql(str(db_path), sql, self.settings.execution_timeout)
                 candidates.append({"sql": sql, "canonical_sql": canonical,
                                    "source_round": round_index,
+                                   "route": item.route,
+                                   "selected_tables": list(item.selected_tables),
                                    "execution": execution.summary()})
                 new_count += 1
             if candidates:
@@ -179,14 +267,24 @@ class AdaptiveSQLSelector:
             else:
                 coverage, candidate_probs = 0.0, []
             best = max(candidate_probs, default=0.0)
-            rounds.append({"round": round_index, "new_candidates": new_count,
-                           "pool_size": len(candidates), "coverage": coverage,
-                           "best_candidate_probability": best})
+            round_record = {"round": round_index, "new_candidates": new_count,
+                            "pool_size": len(candidates), "coverage": coverage,
+                            "best_candidate_probability": best,
+                            "generation_action": applied_feedback.action if applied_feedback
+                            else "initial" if round_index == 0 else "fixed_pool",
+                            "feedback_applied": applied_feedback is not None,
+                            "diagnostics": dict(last.diagnostics) if last else {}}
+            rounds.append(round_record)
             if (coverage >= self.settings.coverage_stop
                     and best >= self.settings.candidate_stop):
                 break
             if len(candidates) >= self.settings.max_candidates:
                 break
+            if round_index + 1 < self.settings.max_rounds:
+                feedback = (choose_feedback(last, candidates,
+                                            candidate_scores=candidate_probs)
+                            if last else GenerationFeedback("diversify", "uncertain", None))
+                round_record["feedback_next"] = feedback.to_dict()
         if last is None:
             last = PoolJudgement(0.0, (), Usage())
         valid = [i for i, item in enumerate(candidates) if item["execution"]["valid"]]

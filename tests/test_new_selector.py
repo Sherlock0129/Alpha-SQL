@@ -1,3 +1,4 @@
+import copy
 import json
 import sqlite3
 import tempfile
@@ -6,18 +7,22 @@ from argparse import Namespace
 from contextlib import closing
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from alphasql.algorithm.selection.dual_calibration import (
     DualCalibrator, LogisticHead, curriculum_fraction, fit_dual,
 )
 from alphasql.algorithm.selection.dual_confidence import JevPoolJudge, PoolJudgement
+from alphasql.algorithm.selection.generation_feedback import GenerationFeedback, choose_feedback
+from alphasql.algorithm.mcts.mcts_action import MCTSNodeType
 from alphasql.database.database_manager import DatabaseManager
 from alphasql.database.schema import ColumnSchema, DatabaseSchema, TableSchema
 from alphasql.jev.client import JevClient
 from alphasql.jev.models import Usage
 from alphasql.jev.runtime import JevSettings
 from alphasql.runner.new_selector import (
-    AdaptiveSQLSelector, SelectorSettings, _split, _train, label_result,
+    AdaptiveSQLSelector, DirectLLMGenerator, GeneratedSQL, SelectorSettings,
+    _split, _train, label_result,
 )
 from alphasql.runner.task import Task
 
@@ -27,23 +32,25 @@ class ScriptedGenerator:
         self.rounds = rounds
         self.calls = []
 
-    def generate(self, task, round_index):
+    def generate(self, task, round_index, feedback=None):
         assert task.sql is None
-        self.calls.append(round_index)
+        self.calls.append((round_index, feedback))
         return self.rounds[round_index]
 
 
 class ScriptedJudge:
     max_candidates = 8
 
-    def __init__(self, coverages, scores):
+    def __init__(self, coverages, scores, diagnostics=None):
         self.coverages, self.scores = coverages, scores
+        self.diagnostics = diagnostics or [{} for _ in coverages]
         self.calls = []
 
     def assess(self, question, evidence, schema, candidates):
         self.calls.append(tuple(item["sql"] for item in candidates))
         index = len(self.calls) - 1
-        return PoolJudgement(self.coverages[index], tuple(self.scores[index]), Usage())
+        return PoolJudgement(self.coverages[index], tuple(self.scores[index]), Usage(),
+                             self.diagnostics[index])
 
 
 class NewSelectorTest(unittest.TestCase):
@@ -67,13 +74,19 @@ class NewSelectorTest(unittest.TestCase):
 
     def test_low_coverage_expands_then_selects_from_valid_candidates(self):
         generator = ScriptedGenerator([
-            ["SELECT name FROM items WHERE name = 'Grace'"],
+            [GeneratedSQL("SELECT name FROM items WHERE name = 'Grace'",
+                          "linked_schema", ("items",))],
             ["SELECT name FROM items WHERE name = 'Ada'"],
         ])
-        judge = ScriptedJudge([0.2, 0.95], [[0.3], [0.1, 0.92]])
+        judge = ScriptedJudge([0.2, 0.95], [[0.3], [0.1, 0.92]],
+                              [{"schema": 0.9}, {}])
         result = AdaptiveSQLSelector(generator, judge,
             SelectorSettings(max_rounds=2, max_candidates=8)).run(self.task, str(self.root))
-        self.assertEqual(generator.calls, [0, 1])
+        self.assertEqual([call[0] for call in generator.calls], [0, 1])
+        self.assertIsNone(generator.calls[0][1])
+        self.assertEqual(generator.calls[1][1].action, "relink")
+        self.assertEqual(generator.calls[1][1].anchor_schema_tables, ("items",))
+        self.assertEqual(result["rounds"][1]["generation_action"], "relink")
         self.assertEqual(result["selected_index"], 1)
         self.assertEqual(len(result["rounds"]), 2)
         self.assertFalse(result["uncertain"])
@@ -105,6 +118,10 @@ class NewSelectorTest(unittest.TestCase):
             captured["questions"] = questions
             return {"answers": {
                 "pool_covered": {"noul": 0.6},
+                "gap_schema": {"noul": 0.7},
+                "gap_projection": {"noul": 0.1},
+                "gap_filters": {"noul": 0.2},
+                "gap_logic": {"noul": 0.3},
                 "candidate_0": {"noul": 0.2},
                 "candidate_1": {"noul": 0.8},
             }}
@@ -115,9 +132,74 @@ class NewSelectorTest(unittest.TestCase):
         answer = judge.assess("question", "hint", {"tables": {}}, pool)
         self.assertEqual(answer.coverage_raw, 0.6)
         self.assertEqual(answer.candidate_raw, (0.2, 0.8))
+        self.assertEqual(answer.diagnostics["schema"], 0.7)
         self.assertEqual(set(captured["questions"]),
-                         {"pool_covered", "candidate_0", "candidate_1"})
+                         {"pool_covered", "gap_schema", "gap_projection",
+                          "gap_filters", "gap_logic", "candidate_0", "candidate_1"})
         self.assertNotIn("gold", json.dumps(captured["state"]))
+
+    def test_feedback_uses_diagnosis_and_execution_error(self):
+        valid = [{"sql": "SELECT name FROM items", "canonical_sql": "SELECT name FROM items",
+                  "selected_tables": ["items"], "execution": {"valid": True}}]
+        judgement = PoolJudgement(0.2, (0.4,), Usage(),
+                                  {"filters": 0.8, "schema": 0.1})
+        feedback = choose_feedback(judgement, valid)
+        self.assertEqual((feedback.action, feedback.dimension), ("revise", "filters"))
+        self.assertIn("predicate", feedback.hint())
+        invalid = [{"sql": "SELECT x FROM missing", "execution":
+                    {"valid": False, "error": "no such table: missing"}}]
+        feedback = choose_feedback(PoolJudgement(0, (0,), Usage()), invalid)
+        self.assertEqual((feedback.action, feedback.dimension), ("relink", "schema"))
+
+    def test_direct_generator_routes_feedback_into_schema_and_revision_actions(self):
+        task = self.task.model_copy(update={"table_schema_dict":
+                                    DatabaseManager.CACHED_DATABASE_SCHEMA["testdb"].tables})
+        generator = DirectLLMGenerator(str(self.root), self.root / "generated", "fake", 1)
+        received = []
+
+        def select_schema(action, root, kwargs):
+            received.append(("schema", root.hint, root.schema_context))
+            child = copy.copy(root)
+            child.node_type = MCTSNodeType.SCHEMA_SELECTION
+            child.selected_schema_dict = root.table_schema_dict
+            child.selected_schema_context = "linked items"
+            child.path_nodes = root.path_nodes + [child]
+            return [child]
+
+        def generate_sql(action, linked, kwargs):
+            received.append(("generate", linked.hint, linked.selected_schema_context))
+            child = copy.copy(linked)
+            child.node_type = MCTSNodeType.SQL_GENERATION
+            child.sql_query = "SELECT name FROM items"
+            child.path_nodes = linked.path_nodes + [child]
+            return [child]
+
+        def revise_sql(action, anchor, kwargs):
+            received.append(("revise", anchor.sql_query, anchor.selected_schema_context))
+            child = copy.copy(anchor)
+            child.node_type = MCTSNodeType.SQL_REVISION
+            child.revised_sql_query = "SELECT name FROM items WHERE name = 'Ada'"
+            child.path_nodes = anchor.path_nodes + [child]
+            return [child]
+
+        with (patch("alphasql.algorithm.mcts.mcts_action.SchemaSelectionAction.create_children_nodes",
+                    select_schema),
+              patch("alphasql.algorithm.mcts.mcts_action.SQLGenerationAction.create_children_nodes",
+                    generate_sql),
+              patch("alphasql.algorithm.mcts.mcts_action.SQLRevisionAction.create_children_nodes",
+                    revise_sql),
+              patch("alphasql.llm_call.runtime.configure_environment")):
+            relinked = generator.generate(task, 1, GenerationFeedback(
+                "relink", "schema", "SELECT missing FROM items", ("items",)))
+            revised = generator.generate(task, 2, GenerationFeedback(
+                "revise", "filters", "SELECT name FROM items", ("items",)))
+        self.assertEqual(relinked[0].route, "relink")
+        self.assertEqual(relinked[0].selected_tables, ("items",))
+        self.assertEqual(revised[0].route, "revise")
+        self.assertEqual([row[0] for row in received], ["schema", "generate", "revise"])
+        self.assertIn("Reconsider table", received[0][1])
+        self.assertEqual(received[2][1], "SELECT name FROM items")
+        self.assertIn("items", received[2][2])
 
     def test_offline_labels_use_execution_multiset_and_do_not_store_sql(self):
         result = {"question_id": 1, "db_id": "testdb", "coverage_raw": 0.7,

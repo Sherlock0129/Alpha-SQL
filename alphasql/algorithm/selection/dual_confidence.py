@@ -8,6 +8,7 @@ probabilities of correctness.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from dataclasses import field
 from typing import Any, Mapping, Sequence
 
 from alphasql.jev.client import JevClient
@@ -19,6 +20,7 @@ class PoolJudgement:
     coverage_raw: float
     candidate_raw: tuple[float, ...]
     usage: Usage
+    diagnostics: Mapping[str, float] = field(default_factory=dict)
 
 
 class JevPoolJudge:
@@ -49,6 +51,8 @@ class JevPoolJudge:
             "schema": dict(schema),
             "candidates": [
                 {"index": i, "sql": candidates[i]["sql"],
+                 "generation_route": candidates[i].get("route"),
+                 "linked_tables": candidates[i].get("selected_tables", []),
                  "execution": candidates[i]["execution"]}
                 for i in valid_indices
             ],
@@ -60,6 +64,24 @@ class JevPoolJudge:
                 "A query merely executing is insufficient."
             )
         }
+        questions.update({
+            "gap_schema": NoulQuestion(
+                "If the candidates are wrong, is missing or incorrect table/column/value "
+                "grounding or JOIN path a likely cause?"
+            ),
+            "gap_projection": NoulQuestion(
+                "If the candidates are wrong, is SELECT projection or result multiplicity "
+                "a likely cause?"
+            ),
+            "gap_filters": NoulQuestion(
+                "If the candidates are wrong, are predicates, literals or date boundaries "
+                "a likely cause?"
+            ),
+            "gap_logic": NoulQuestion(
+                "If the candidates are wrong, is aggregation, grouping, ordering, LIMIT "
+                "or SQL structure a likely cause?"
+            ),
+        })
         questions.update({
             f"candidate_{i}": NoulQuestion(
                 f"Is candidate {i} fully correct for the question, including all "
@@ -73,4 +95,6 @@ class JevPoolJudge:
         return PoolJudgement(
             response.require("pool_covered", NoulResult).noul,
             tuple(raw), response.usage,
+            {name: response.require(f"gap_{name}", NoulResult).noul
+             for name in ("schema", "projection", "filters", "logic")},
         )
