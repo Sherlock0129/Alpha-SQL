@@ -5,10 +5,10 @@ n_processes: 1
 max_rollout_steps: 2
 max_depth: 5
 exploration_constant: 1.414
-save_root_dir: results/llm_vs_jev_phase2/mcts_candidates
+save_root_dir: results/qwen3.5-35B-a3b/llm_vs_jev_phase2/mcts_candidates
 random_seed: 42
 mcts_model_kwargs:
-  model: qwen3-coder-flash
+  model: qwen3.5-35B-a3b
   n: 1
   top_p: 0.8
   max_tokens: 2048

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+import hashlib
 import json
 from pathlib import Path
 import pickle
@@ -53,11 +54,16 @@ def build_records(
     db_root_dir: str,
     hard_negatives_per_question: int = 0,
     include_gold_positive: bool = False,
+    question_ids: Sequence[str] | None = None,
 ) -> List[Dict[str, Any]]:
     dataset = _load_dataset(data_path)
+    allowed_ids = None if question_ids is None else set(map(str, question_ids))
     all_records = []
     for result_path in sorted(Path(results_dir).glob("*.pkl")):
         question_id = result_path.stem
+        # Filter before accessing gold, opening a pickle, or executing any SQL.
+        if allowed_ids is not None and question_id not in allowed_ids:
+            continue
         if question_id not in dataset:
             continue
         item = dataset[question_id]
@@ -145,6 +151,9 @@ def build_records(
                 + "; columns: "
                 + ", ".join(f"{table}.{column}" for table, column in sorted(linked_columns)),
                 "label": label,
+                "execution_signature_sha256": hashlib.sha256(
+                    repr(execution["signature"]).encode("utf-8")
+                ).hexdigest(),
                 "candidate_source": "mcts",
                 "features": extract_candidate_features(sql, schema, linked_tables, linked_columns, execution, mcts),
             }

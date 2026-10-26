@@ -1,0 +1,171 @@
+# Design manifest only: no current runner implements this schema.
+schema_version: 1
+kind: experiment_design_only
+status: not_implemented_not_run
+research_question: semantic_error_increment_beyond_training_dynamics_and_retention
+
+frozen_data:
+  pilot_candidate_dir: results/direct_schema_pool_300/train
+  pilot_data_path: data/bird/schema_pool_300/train.json
+  pilot_db_root: data/bird/train/train_databases
+  pilot_split: config/hard_case_pairwise_100_split.json
+  pair_source: all_pairwise_eligible_train_questions
+  hard_only: false
+  generate_new_candidates: false
+  inject_gold_sql: false
+  synthesize_negatives: false
+  network_calls_allowed: false
+  freeze_candidate_multiplicity: true
+  freeze_execution_signatures: true
+  feature_schema_and_hash: null  # Must be resolved before training.
+  execution_protocol_hash: null
+  train_manifest_hash: null
+  error_label_manifest_hash: null
+  confirmation_split_manifest: null  # New independent audit/test required.
+  historical_test_role: exploratory_only
+
+model:
+  class: SchemaAwareMLP
+  hidden_sizes: [64, 32]
+  dropout: 0.10
+  retain_self_consistency_features: true
+  gold_derived_input_features: false
+  shared_initial_state_per_seed: true
+  scaler_fit_split: train_only
+
+objective:
+  pairwise: ranknet_softplus_mean
+  legacy_hardness_weights: disabled_for_all_arms
+  pointwise_weight: 0.20
+  pointwise_class_weight_source: frozen_train_labels
+  anchor_sampling: uniform_question_then_candidate
+  shared_anchor_stream_per_seed: true
+  importance_correction: false
+  interpretation: fixed_pool_adaptive_reweighting_not_unbiased_erm
+
+optimizer:
+  name: AdamW
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 5.0
+
+pilot:
+  seeds: [101, 202, 303]
+  pair_batch_size: 8
+  anchor_batch_size: 16
+  max_updates: 250
+  uniform_warmup_updates: 25
+  probe_every_updates: 10
+  checkpoint_every_updates: 10
+  validation_early_stopping: false
+  monitor_panel: all_train_pairs
+  role: pipeline_and_mechanism_only
+
+confirmation:
+  status: blocked_until_protocol_and_manifests_frozen
+  seeds: [7, 21, 42, 84, 168]
+  max_updates_proposed_not_frozen: 2000
+  pair_batch_size_proposed_not_frozen: 32
+  ensemble_across_seeds: false
+  require_independent_external_evaluation: true
+
+error_groups:
+  names:
+    - projection_multiplicity
+    - filter_literal
+    - relation
+    - computation_ordering
+    - unknown_mixed
+  source: train_positive_negative_candidate_contrast
+  ast_labels_are_weak: true
+  normalize_multilabel_membership: true
+  pilot_audit_max_pairs_per_group: 10
+  confirmation_min_unique_train_questions_per_group: 10
+  minimum_support_is_not_power_analysis: true
+
+sampling:
+  base_distribution: uniform_question_then_pair
+  with_replacement: true
+  strategies: [uniform, hard, static_error_balanced, loss_progress, error_aware]
+  ema_decay: 0.9
+  uniform_floor_rho: 0.25
+  semantic_coefficient_eta: 1.0
+  shrinkage_question_equivalents: 10
+  weight_clip: [0.1, 10.0]
+  probe_scope: train_only
+  shared_probe_schedule_for_mechanism_comparison: true
+  also_run_production_cost_baselines_without_unneeded_probes: true
+  replay:
+    lambda_values: [0.0, 0.25]
+    reference: frozen_execution_self_consistency
+    keep_pool: baseline_correct_pairwise_eligible_train_questions
+    distribution: uniform_keep_question_then_pair
+    shared_keep_stream_per_seed: true
+    append_extra_training_slots: false
+    adapt_lambda_in_main_experiment: false
+
+ablations:
+  variants:
+    - one_shot_group_weights_with_dynamic_pair_scores
+    - stratified_shuffled_semantic_membership
+    - eta_zero_must_match_loss_progress
+    - exposure_multiset_shuffled_replay
+    - group_matched_nonsemantic_controller
+  label_permutation_seeds: [17, 29, 43]
+  count_source_trajectory_cost_for_exposure_replay: true
+
+inference:
+  primary: raw_neural_top1_over_valid_candidates
+  tie_break: frozen_candidate_index
+  secondary: one_common_sc_gate_frozen_from_independent_uniform_pilot
+  tune_gate_per_arm: false
+  tune_gate_per_checkpoint: false
+  empty_result_is_valid: true
+
+targets:
+  quality_metric: question_execution_accuracy
+  regression_metric: baseline_correct_new_wrong_over_all_questions
+  quality_tau: null
+  regression_r_max: null
+  threshold_manifest_hash: null
+  threshold_source: independent_uniform_replay_pilot_terminal_medians
+  consecutive_successful_evaluations: 3
+  count_confirmation_time: true
+  strict_quality_noninferiority_margin: 0.0
+  strict_regression_noninferiority_margin: 0.0
+  deploy_target_must_exceed_sc_by_one_validation_question: true
+  reject_trivial_already_met_initial_target: true
+
+evaluation:
+  unit: question
+  primary_mechanism_comparison: error_aware_replay_vs_loss_progress_replay
+  secondary_comparisons:
+    - error_aware_replay_vs_uniform_replay
+    - error_aware_replay_vs_hard_replay
+    - error_aware_replay_vs_static_error_balanced_replay
+  report:
+    - stable_joint_time_to_target
+    - hit_rate_and_censoring
+    - cold_and_reuse_costs
+    - updates_pair_draws_and_unique_exposures
+    - terminal_quality_and_external_audit
+    - negative_and_positive_flips
+    - conditional_regression_and_sc_correct_retention
+    - fixed_candidate_coverage
+    - per_error_group_support_and_exposure
+  candidate_generation_cost: separate_common_setup_not_scheduler_gain
+  include_diagnostic_and_scheduler_cost: true
+  do_not_drop_non_hitting_seeds: true
+  no_significance_is_not_noninferiority: true
+
+required_outputs:
+  - frozen_manifest.json
+  - threshold_manifest.json
+  - run_config.json
+  - exposure.jsonl
+  - train_trace.jsonl
+  - probe_trace.jsonl
+  - checkpoint_predictions.jsonl
+  - cost_breakdown.json
+  - paired_summary.json
+  - error_analysis.csv

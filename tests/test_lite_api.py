@@ -24,11 +24,11 @@ class LiteTests(unittest.TestCase):
         client.chat.completions.create.return_value = response
         with patch.object(module, 'OpenAI', return_value=client), patch.object(module, '_requests', 0), \
              patch.dict(os.environ, {'LLM_MAX_REQUESTS': '2'}):
-            self.assertEqual(len(module.call_openai('test', model='qwen3-coder-flash', n=2)), 2)
+            self.assertEqual(len(module.call_openai('test', model='qwen3.5-35B-a3b', n=2)), 2)
             self.assertTrue(all(c.kwargs['n'] == 1 and not c.kwargs['stream']
                 for c in client.chat.completions.create.call_args_list))
             with self.assertRaisesRegex(RuntimeError, 'budget'):
-                module.call_openai('test', model='qwen3-coder-flash')
+                module.call_openai('test', model='qwen3.5-35B-a3b')
 
     def test_embedding_batch_order(self):
         from alphasql.llm_call.embedding_utils import EmbeddingModel

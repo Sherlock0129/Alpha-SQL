@@ -31,7 +31,7 @@ configure_environment()
 # Initialize embedding model from environment configuration
 EMBEDDING_MODEL_CALLABLE = get_embedding_model()
 
-MODEL_NAME = os.getenv('PREPROCESS_MODEL', 'qwen3-coder-flash')
+MODEL_NAME = os.getenv('PREPROCESS_MODEL') or os.getenv('LLM_MODEL', 'qwen3.5-35B-a3b')
 COST_RECORDER = CostRecorder(model=MODEL_NAME)
 TEMPERATURE = 0.2
 

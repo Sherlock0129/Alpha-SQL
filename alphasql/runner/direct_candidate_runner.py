@@ -198,7 +198,7 @@ if __name__ == "__main__":
     parser.add_argument("--tasks-file-path", required=True)
     parser.add_argument("--db-root-dir", required=True)
     parser.add_argument("--save-root-dir", required=True)
-    parser.add_argument("--model", default="qwen3-coder-flash")
+    parser.add_argument("--model", default="qwen3.5-35B-a3b")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--n-processes", type=int, default=4)
     parser.add_argument("--temperature", type=float, default=0.9)

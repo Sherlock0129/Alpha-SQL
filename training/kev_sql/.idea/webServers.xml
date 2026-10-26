@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="WebServers">
+    <option name="servers">
+      <webServer id="1c660f9c-6c2a-4b0c-a7db-8970f5027370" name="qwen_JEV">
+        <fileTransfer rootFolder="/hpc2hdd/home/dxia440/jhupload" accessType="SFTP" host="hpc2login.hpc.hkust-gz.edu.cn" port="22" sshConfigId="6b0bf45f-ffe7-465d-9097-db7cd4104e5c" sshConfig="dxia440@hpc2login.hpc.hkust-gz.edu.cn:22 password">
+          <advancedOptions>
+            <advancedOptions dataProtectionLevel="Private" keepAliveTimeout="0" passiveMode="true" shareSSLContext="true" />
+          </advancedOptions>
+        </fileTransfer>
+      </webServer>
+    </option>
+  </component>
+</project>

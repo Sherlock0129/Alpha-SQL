@@ -7,6 +7,10 @@ temp
 .env*
 !.env.example
 .venv/
+.venv-deepeye/
+external/DeepEye-SQL/workspace/
+external/DeepEye-SQL/logs/
+external/DeepEye-SQL/config/local/
 .gpu-deps/
 rebuttal_exp
 .history

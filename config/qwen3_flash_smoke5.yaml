@@ -5,10 +5,10 @@ n_processes: 1
 max_rollout_steps: 2
 max_depth: 16
 exploration_constant: 1.414
-save_root_dir: results/qwen3-coder-flash/smoke5
+save_root_dir: results/qwen3.5-35B-a3b/smoke5
 random_seed: 42
 mcts_model_kwargs:
-  model: qwen3-coder-flash
+  model: qwen3.5-35B-a3b
   n: 1
   top_p: 0.8
   max_tokens: 4096

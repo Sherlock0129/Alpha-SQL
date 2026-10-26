@@ -204,6 +204,60 @@ query plans, canonical SQLite candidates, execution summaries, dimension-level
 rerank scores, and the selected SQL. Without `TYPESAFE_API_KEY`, the runner exits
 before creating an SDK client or sending a network request.
 
+## Independent linker replacement experiment (287 questions)
+
+The standalone experiment freezes the original 287 shared question IDs from
+`results/llm_vs_jev_300/per_question.csv`. Both linkers receive the same question,
+evidence and full schema metadata, including at most five examples per column.
+The Qwen arm uses the original `schema_selection` prompt; the Jev arm asks only
+atomic table/column Noul questions at the preconfigured threshold.
+
+```powershell
+.\.venv\Scripts\python.exe -m alphasql.runner.linker_ablation --stage prepare
+.\.venv\Scripts\python.exe -u -m alphasql.runner.linker_ablation --stage link --workers 4
+.\.venv\Scripts\python.exe -u -m alphasql.runner.linker_ablation --stage generate --workers 8
+.\.venv\Scripts\python.exe -m alphasql.runner.linker_ablation --stage evaluate
+```
+
+Both arms apply the same original PK/FK completion and run Qwen MCTS with the
+schema fixed upfront in every generation/revision branch. Subsequent schema
+selection actions are disabled equally in both arms. This mandatory-linker
+protocol isolates the linker replacement; it is not an exact rerun of the old
+MCTS baseline, where some paths could bypass schema selection. Neither arm uses
+Jev SQL intent decisions, the constrained compiler, or Jev reranking. Final
+selection reuses execution self-consistency.
+
+Results are saved under `results/linker_ablation_287/`, including immutable input
+hashes and experiment settings, separate raw/completed schema metrics, resumable
+per-question link/candidate checkpoints, execution accuracy and coverage, paired
+bootstrap and McNemar statistics, and error analysis. Evaluation reuses the prior
+order-insensitive multiset signature; this is not the full official BIRD evaluator.
+Gold SQL is removed before any live model call. Failed calls remain explicit and
+are retried by rerunning the same stage; successful checkpoints are reused.
+
+## DeepEye-SQL baseline
+
+The active LLM for Alpha-SQL and every DeepEye-SQL stage is
+`qwen3.5-35B-a3b`, configured through `.env.local` and the root YAML configs.
+Model-specific outputs use separate run directories. Upstream model templates and
+previous experiment records retain their original names for reference.
+
+The official DeepEye-SQL implementation is available under `external/DeepEye-SQL`.
+The Windows-compatible launcher uses a separate Python 3.12 environment and the
+existing BIRD data. See [DEEPEYE_SQL_SETUP.md](DEEPEYE_SQL_SETUP.md) for setup,
+profiles, resumable stages, candidate export, and evaluation.
+
+```powershell
+.\.venv-deepeye\Scripts\python.exe -m deepeye.runner doctor
+.\.venv-deepeye\Scripts\python.exe -m deepeye.runner prepare --run-name bird-pilot --max-samples 3
+.\.venv-deepeye\Scripts\python.exe -m deepeye.runner run --run-name bird-pilot
+.\.venv-deepeye\Scripts\python.exe -m deepeye.runner evaluate --run-name bird-pilot
+```
+
+The smoke profile reduces sampling budgets and defaults to no few-shot retrieval;
+the full profile enables the upstream dynamic few-shot workflow. Results and
+candidate adapters are written to `results/deepeye/<run-name>/`.
+
 ## 📝 Citation
 If you find our work useful or inspiring, please kindly cite:
 ```bibtex

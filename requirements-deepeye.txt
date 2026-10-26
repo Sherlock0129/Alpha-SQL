@@ -1,0 +1,15 @@
+# BIRD/SQLite runtime using remote OpenAI-compatible LLM and embeddings.
+# Cloud databases and local sentence-transformer models are optional upstream extras.
+chardet>=5.2,<6
+chromadb>=1.0.21,<2
+numpy>=1.26,<3
+openai>=1.107.2,<3
+pandas>=2.3.2,<3
+pydantic>=2.7,<3
+python-dotenv>=1,<2
+tabulate>=0.9,<1
+tenacity>=9.1.2,<10
+tiktoken>=0.11,<1
+torch>=2.4,<3
+tqdm>=4.66,<5
+loguru>=0.7.3,<1

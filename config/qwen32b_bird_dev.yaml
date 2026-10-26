@@ -5,9 +5,9 @@ n_processes: 32
 max_rollout_steps: 24
 max_depth: 16
 exploration_constant: 1.414
-save_root_dir: "results/Qwen2.5-Coder-32B-Instruct/bird/dev"
+save_root_dir: results/qwen3.5-35B-a3b/bird/dev
 mcts_model_kwargs:
-    model: "Qwen/Qwen2.5-Coder-32B-Instruct"
+    model: qwen3.5-35B-a3b
     n: 3
     top_p: 0.8
     max_tokens: 4096

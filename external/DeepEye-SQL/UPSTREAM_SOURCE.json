@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/HKUSTDial/DeepEye-SQL",
+  "branch": "master",
+  "observed_head_commit": "252ab45a7adf9f88fb93d1ff27ca019d20f0449a",
+  "downloaded_on": "2026-10-19",
+  "download_url": "https://codeload.github.com/HKUSTDial/DeepEye-SQL/zip/refs/heads/master",
+  "archive_sha256": "c8f78edce13fb69e13369961fe634a8d17e504a78f1c59da93f77188b44e7d17",
+  "license": "MIT",
+  "local_patches": {
+    "app/config/config.py": [
+      "Resolve ${NAME} environment placeholders recursively in memory",
+      "Support BIRD train split and question_ids",
+      "Avoid SameFileError when input config already resides in run output directory"
+    ],
+    "app/dataset/dataset.py": [
+      "Read BIRD labels as UTF-8",
+      "Filter frozen question IDs before max_samples and fail on unknown IDs",
+      "Normalize absent evidence/difficulty/SQL for test-only labels"
+    ]
+  },
+  "note": "Source vendored from the official archive; the archive hash identifies the downloaded bytes. The commit was independently observed through the GitHub API."
+}

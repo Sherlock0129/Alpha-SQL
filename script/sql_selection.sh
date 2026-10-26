@@ -3,7 +3,7 @@
 DB_ROOT_DIR="data/bird/dev/dev_databases"
 PROCESS_NUM=32
 
-RESULTS_DIR="results/Qwen2.5-Coder-32B-Instruct/bird/dev"
+RESULTS_DIR="results/qwen3.5-35B-a3b/bird/dev"
 OUTPUT_PATH="./pred_sqls.json"
 
 echo "Selecting SQLs..."

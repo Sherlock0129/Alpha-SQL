@@ -5,10 +5,10 @@ n_processes: 4
 max_rollout_steps: 4
 max_depth: 6
 exploration_constant: 1.414
-save_root_dir: results/schema_pool_dense/train
+save_root_dir: results/qwen3.5-35B-a3b/schema_pool_dense/train
 random_seed: 42
 mcts_model_kwargs:
-  model: qwen3-coder-flash
+  model: qwen3.5-35B-a3b
   n: 1
   top_p: 0.9
   max_tokens: 4096

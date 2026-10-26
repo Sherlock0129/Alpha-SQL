@@ -1,0 +1,1 @@
+{"messages":[{"role":"system","content":"你是一个严谨的 Python 编程助手。只输出代码。"},{"role":"user","content":"实现函数 cube(n)，返回整数的立方。"},{"role":"assistant","content":"def cube(n: int) -> int:\n    return n * n * n"}]}

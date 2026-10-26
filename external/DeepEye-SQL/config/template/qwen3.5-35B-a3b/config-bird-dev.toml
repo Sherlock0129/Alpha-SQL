@@ -1,0 +1,97 @@
+########## Logger configuration ##########
+[logger]
+print_level = "INFO"
+
+########## Run output configuration ##########
+[run]
+save_root = "workspace/runs"
+exp_name = "bird-dev"
+parallelism = 16
+embedding_batch_size = 256
+llm_timeout = 300
+progress_log_interval = 50
+checkpoint_interval = 20
+default_llm_profile = "qwen35"
+
+########## LLM profiles ##########
+[llm_profiles.qwen35]
+model = "${DEEPEYE_MODEL}"
+base_url = "${DEEPEYE_BASE_URL}"
+api_key = "${DEEPEYE_API_KEY}"
+max_tokens = 16384
+temperature = 0.7
+n_call_strategy = "split"
+api_type = "openai"
+max_model_len = 65536
+
+########## Default embedding configuration ##########
+[embedding]
+api_type = "openai"
+embedding_model_name_or_path = "${DEEPEYE_EMBEDDING_MODEL}"
+base_url = "${DEEPEYE_EMBEDDING_BASE_URL}"
+api_key = "${DEEPEYE_EMBEDDING_API_KEY}"
+
+########## Dataset configuration ##########
+[dataset]
+type = "bird"
+split = "dev"
+root_path = "data/bird"
+sql_execution_timeout = 600
+
+########## Vector database configuration ##########
+[vector_database]
+max_value_length = 100
+lower_meta_data = true
+build_backend = "local_index"
+
+########## Few-shot index configuration ##########
+[few_shot_index]
+num_examples = 7
+question_weight = 0.6
+sql_weight = 0.4
+similarity_device = "cuda:0"
+force_rebuild = false
+llm_profile = "qwen35"
+
+[few_shot_index.preliminary_sql]
+enabled = true
+dc_sampling_budget = 12
+skeleton_sampling_budget = 12
+llm_profile = "qwen35"
+
+########## Value retrieval configuration ##########
+[value_retrieval]
+max_values_per_column = 5
+backend = "local_index"
+local_index_device = "cuda:0"
+llm_profile = "qwen35"
+
+########## Schema linking configuration ##########
+[schema_linking]
+direct_linking_sampling_budget = 12
+reversed_linking_sampling_budget = 12
+value_distance_threshold = 0.05
+llm_profile = "qwen35"
+
+########## SQL generation configuration ##########
+[sql_generation]
+dc_sampling_budget = 12
+skeleton_sampling_budget = 12
+icl_sampling_budget = 12
+llm_profile = "qwen35"
+
+########## SQL revision configuration ##########
+[sql_revision]
+checker_sampling_budget = 16
+llm_profile = "qwen35"
+
+########## SQL selection configuration ##########
+[sql_selection]
+filter_top_k_sql = 2
+evaluator_sampling_budget = 16
+shortcut_consistency_score_threshold = 0.6
+llm_profile = "qwen35"
+
+########## LLM extractor configuration ##########
+[llm_extractor]
+max_retry = 5

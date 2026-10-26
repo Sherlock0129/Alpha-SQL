@@ -7,7 +7,7 @@ from openai import OpenAI
 from alphasql.llm_call.runtime import configure_environment
 from alphasql.llm_call.cost_recoder import CostRecorder
 
-DEFAULT_COST_RECORDER = CostRecorder(model='qwen3-coder-flash')
+DEFAULT_COST_RECORDER = CostRecorder(model=os.getenv('LLM_MODEL', 'qwen3.5-35B-a3b'))
 N_CALLING_STRATEGY_SINGLE = 'single'
 N_CALLING_STRATEGY_MULTIPLE = 'multiple'
 _requests = 0
