@@ -12,6 +12,7 @@ import argparse
 from dataclasses import dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import pickle
 import random
@@ -91,15 +92,19 @@ class DirectLLMGenerator:
     def __init__(self, db_root: str, work_dir: str | Path, model: str,
                  samples: int = 3, temperature: float = 0.8,
                  prompt_routes: Sequence[str] = ("skeleton", "query_plan"),
-                 path_samples: int = 1) -> None:
+                 path_samples: int = 1, base_url: str | None = None,
+                 api_key_env: str | None = None) -> None:
         from alphasql.runner.prompt_paths import PROMPT_ROUTES
         if samples < 1 or path_samples < 1:
             raise ValueError("Sample counts must be positive")
         if set(prompt_routes) - set(PROMPT_ROUTES):
             raise ValueError(f"Unknown prompt routes: {set(prompt_routes) - set(PROMPT_ROUTES)}")
+        if bool(base_url) != bool(api_key_env):
+            raise ValueError("Explicit LLM endpoint and API key variable must be supplied together")
         self.db_root, self.work_dir, self.model = db_root, Path(work_dir), model
         self.samples, self.temperature = samples, temperature
         self.prompt_routes, self.path_samples = tuple(prompt_routes), path_samples
+        self.base_url, self.api_key_env = base_url, api_key_env
         self.supports_feedback = True
 
     def generate(self, task: Task, round_index: int,
@@ -116,6 +121,11 @@ class DirectLLMGenerator:
         kwargs = {"model": self.model, "n": 1, "top_p": 0.95,
                   "max_tokens": 4096, "temperature": self.temperature,
                   "n_strategy": "multiple"}
+        if self.api_key_env:
+            key = os.environ.get(self.api_key_env)
+            if not key:
+                raise ValueError(f"{self.api_key_env} is required for {self.base_url}; no LLM call was made")
+            kwargs.update(api_key=key, base_url=self.base_url)
         if feedback:
             (round_dir / "feedback.json").write_text(
                 json.dumps(feedback.to_dict(), ensure_ascii=False, indent=2) + "\n",
@@ -271,7 +281,9 @@ def _generator_provenance(generator: CandidateGenerator,
         config.update(model=generator.model, samples=generator.samples,
                       temperature=generator.temperature,
                       prompt_routes=list(generator.prompt_routes),
-                      path_samples=generator.path_samples)
+                      path_samples=generator.path_samples,
+                      base_url=generator.base_url,
+                      api_key_env=generator.api_key_env)
     elif isinstance(generator, FrozenPoolGenerator):
         config.update(candidate_dir=str(generator.candidate_dir.resolve()),
                       per_round=generator.per_round)
@@ -401,6 +413,7 @@ class AdaptiveSQLSelector:
                                                       if item["source_round"] == round_index],
                             "jev": {"called": bool(last and any(
                                 item["execution"]["valid"] for item in candidates)),
+                                    "model": last.model if last else "",
                                     "pool_covered": last.coverage_raw if last else 0.0,
                                     "candidate": list(last.candidate_raw) if last else [],
                                     "gap_schema": last.diagnostics.get("schema") if last else None,
@@ -505,10 +518,21 @@ def _run(args: argparse.Namespace) -> None:
             raise ValueError("--candidate-dir is required for pool generation")
         generator = FrozenPoolGenerator(args.candidate_dir, args.per_round)
     else:
+        provider = getattr(args, "llm_provider", "project")
+        if provider == "hkustgz":
+            model = args.model or "Qwen3.8-27B"
+            base_url = "https://aigc-api.hkust-gz.edu.cn/api/v2"
+            api_key_env = "AIGC_API_KEY"
+            if not os.environ.get(api_key_env):
+                raise ValueError(f"{api_key_env} is required for {base_url}; no task was started")
+        else:
+            model = args.model or "qwen3-coder-flash"
+            base_url = api_key_env = None
         generator = DirectLLMGenerator(args.database_root_dir, output / "generated",
-                                       args.model, args.samples, args.temperature,
+                                       model, args.samples, args.temperature,
                                        getattr(args, "prompt_paths", ("skeleton", "query_plan")),
-                                       getattr(args, "prompt_path_samples", 1))
+                                       getattr(args, "prompt_path_samples", 1),
+                                       base_url, api_key_env)
     judge = JevPoolJudge(JevClient(settings), args.max_candidates)
     calibrator = DualCalibrator.load(args.calibrator) if args.calibrator else None
     pipeline = AdaptiveSQLSelector(generator, judge,
@@ -604,7 +628,8 @@ def main() -> None:
     run.add_argument("--output-dir", required=True)
     run.add_argument("--generator", choices=("direct", "pool"), default="direct")
     run.add_argument("--candidate-dir")
-    run.add_argument("--model", default="qwen3-coder-flash")
+    run.add_argument("--llm-provider", choices=("project", "hkustgz"), default="project")
+    run.add_argument("--model", help="Default: project qwen3-coder-flash or HKUST(GZ) Qwen3.8-27B")
     run.add_argument("--generator-version", help="Immutable tag for the generator and prompts")
     run.add_argument("--samples", type=int, default=3)
     run.add_argument("--prompt-paths", nargs="*", choices=("skeleton", "query_plan"),

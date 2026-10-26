@@ -21,6 +21,7 @@ class PoolJudgement:
     candidate_raw: tuple[float, ...]
     usage: Usage
     diagnostics: Mapping[str, float] = field(default_factory=dict)
+    model: str = ""
 
 
 class JevPoolJudge:
@@ -97,4 +98,5 @@ class JevPoolJudge:
             tuple(raw), response.usage,
             {name: response.require(f"gap_{name}", NoulResult).noul
              for name in ("schema", "projection", "filters", "logic")},
+            response.model,
         )

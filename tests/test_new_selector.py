@@ -22,7 +22,7 @@ from alphasql.jev.models import Usage
 from alphasql.jev.runtime import JevSettings
 from alphasql.runner.new_selector import (
     AdaptiveSQLSelector, DirectLLMGenerator, GeneratedSQL, SelectorSettings,
-    _split, _train, label_result,
+    _generator_provenance, _split, _train, label_result,
 )
 from alphasql.runner.task import Task
 
@@ -139,6 +139,7 @@ class NewSelectorTest(unittest.TestCase):
         answer = judge.assess("question", "hint", {"tables": {}}, pool)
         self.assertEqual(answer.coverage_raw, 0.6)
         self.assertEqual(answer.candidate_raw, (0.2, 0.8))
+        self.assertEqual(answer.model, "jev-latest")
         self.assertEqual(answer.diagnostics["schema"], 0.7)
         self.assertEqual(set(captured["questions"]),
                          {"pool_covered", "gap_schema", "gap_projection",
@@ -245,6 +246,29 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "generated" / "1" /
                                      "round_00" / "warnings.json").read_text()),
                          ["base route failed"])
+
+    def test_hkust_endpoint_is_passed_explicitly_without_recording_secret(self):
+        task = self.task.model_copy(update={"table_schema_dict":
+                                    DatabaseManager.CACHED_DATABASE_SCHEMA["testdb"].tables})
+        generator = DirectLLMGenerator(str(self.root), self.root / "hkust_generated",
+                                       "Qwen3.8-27B", 1, prompt_routes=("skeleton",),
+                                       base_url="https://aigc-api.hkust-gz.edu.cn/api/v2",
+                                       api_key_env="AIGC_API_KEY")
+        calls = []
+
+        def fake_llm(prompt, **kwargs):
+            calls.append(kwargs)
+            return ["<sql>SELECT name FROM items</sql>"]
+
+        with (patch.dict("os.environ", {"AIGC_API_KEY": "school-secret"}),
+              patch("alphasql.runner.direct_candidate_runner.generate_one",
+                    return_value={"warnings": ["base route failed"]}),
+              patch("alphasql.runner.prompt_paths.call_openai", fake_llm)):
+            candidates = generator.generate(task, 0)
+        self.assertEqual(candidates[0].sql, "SELECT name FROM items")
+        self.assertEqual(calls[0]["api_key"], "school-secret")
+        self.assertEqual(calls[0]["base_url"], "https://aigc-api.hkust-gz.edu.cn/api/v2")
+        self.assertNotIn("school-secret", json.dumps(_generator_provenance(generator)))
 
     def test_offline_labels_use_execution_multiset_and_do_not_store_sql(self):
         result = {"question_id": 1, "db_id": "testdb", "coverage_raw": 0.7,

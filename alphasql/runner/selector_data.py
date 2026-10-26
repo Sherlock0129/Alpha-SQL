@@ -97,6 +97,11 @@ def _split(args: argparse.Namespace) -> None:
              json.dumps(row.get("calibrator", {}), sort_keys=True))
             for row in rows}) != 1:
         raise ValueError("Split data must use one frozen generator, judge and calibrator")
+    actual_jev_models = {state["jev"].get("model") for row in rows
+                         for state in row["rounds"] if state["jev"].get("called")
+                         and state["jev"].get("model")}
+    if len(actual_jev_models) > 1:
+        raise ValueError(f"Mixed TypeSafe model versions in one split: {sorted(actual_jev_models)}")
     parts = split_by_database(rows, args.validation_fraction, args.test_fraction, args.seed)
     output = Path(args.output_dir)
     output.mkdir(parents=True, exist_ok=True)
@@ -108,6 +113,7 @@ def _split(args: argparse.Namespace) -> None:
                 "seed": args.seed, "validation_fraction": args.validation_fraction,
                 "test_fraction": args.test_fraction,
                 "generator_versions": sorted({row["generator"]["version"] for row in rows}),
+                "jev_response_models": sorted(actual_jev_models),
                 "partitions": {name: {"questions": len(part),
                                       "databases": sorted({row["db_id"] for row in part}),
                                       "strata": stratum_counts(part)}

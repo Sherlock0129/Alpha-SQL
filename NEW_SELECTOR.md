@@ -32,6 +32,23 @@ JEV 同时回答两类正确性问题和四类诊断问题
 
 默认每条新增提示路径生成 1 个候选；原 D&C 路径仍由 `--samples` 控制。可用 `--prompt-paths skeleton query_plan --prompt-path-samples 1` 调整，或在 `--prompt-paths` 后直接接下一个选项以关闭新增路径，做同一生成器的消融。新增路径产生的 SQL 由选择器统一执行校验；一次提示路径失败不会丢弃其他路径的候选。
 
+港科广 AIGC V2 可通过 `--llm-provider hkustgz` 选择。SQL LLM 请求显式传入 `https://aigc-api.hkust-gz.edu.cn/api/v2` 和 `AIGC_API_KEY`，因此即使项目的旧 `DASHSCOPE_*` 配置仍在，也不会把本次 SQL 生成发往阿里云。TypeSafe JEV 独立使用 `TYPESAFE_API_KEY`。当前港科广官方模型列表给出的默认模型是 `Qwen3.8-27B`；可用 `--model` 指定其他实际可用的模型。密钥仅从环境变量读取，不进入结果或生成器版本哈希。
+
+```powershell
+# 在 .env.local 或当前进程环境中设置 AIGC_API_KEY 与 TYPESAFE_API_KEY。
+$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300/llm_usage.jsonl"
+& .\.venv\Scripts\python.exe -m alphasql.runner.new_selector run `
+  --tasks-file-path data/preprocessed/schema_pool_300/train/tasks.pkl `
+  --database-root-dir data/bird/train/train_databases `
+  --output-dir results/new_selector/hkust_qwen38_300 `
+  --generator direct --llm-provider hkustgz --model Qwen3.8-27B `
+  --generator-version hkustgz-qwen38-selector-v1 `
+  --samples 2 --prompt-path-samples 1 --max-rounds 2 --max-candidates 16 `
+  --limit 5
+```
+
+五题烟测通过后，保留相同输出目录和全部配置，移除 `--limit 5` 即可续采剩余题。完整采集与训练安排见 [SELECTOR_DATA_TRAINING_PLAN.md](SELECTOR_DATA_TRAINING_PLAN.md)。
+
 推理前把 `Task.sql` 清空。JEV 只看到问题、证据、Schema、候选 SQL 和执行摘要；标准答案只在离线 `label` 阶段使用。无可执行 SQL 时，候选集覆盖值固定为 0，不能让校准器把它抬高。执行成功但返回空行是有效候选。
 
 `coverage_raw` 和 `candidate_raw` 是 JEV 的原始判断，**并非已经验证的统计概率**。训练后加载 `dual_calibrator.json` 才输出 `coverage_probability` / `candidate_probability`，校准质量以独立验证数据库上的 Brier 分数检验。候选集覆盖概率和单候选正确概率分别拟合，不能把 `max(candidate_probability)` 当作前者。

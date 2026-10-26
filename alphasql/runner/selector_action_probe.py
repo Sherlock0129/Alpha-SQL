@@ -154,7 +154,9 @@ def probe_action(state: Mapping[str, Any], action: str, db_root: str,
                                            int(config["samples"]),
                                            float(config["temperature"]),
                                            tuple(config["prompt_routes"]),
-                                           int(config["path_samples"]))
+                                           int(config["path_samples"]),
+                                           config.get("base_url"),
+                                           config.get("api_key_env"))
             if _generator_provenance(generator)["source_sha256"] != config["source_sha256"]:
                 raise ValueError("Generator code or prompt templates changed since pool creation")
             if max_calls < 2:
