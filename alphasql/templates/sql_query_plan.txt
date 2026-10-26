@@ -1,0 +1,17 @@
+You are a SQLite expert. Produce one read-only SQL query for the question.
+
+Work backward from the requested answer as a relational execution plan: decide
+the final result shape, then ordering/limit, aggregation, filters, join keys,
+and source tables. Translate that plan into SQL. Check row multiplicity,
+DISTINCT, NULL behavior and every literal against the question and schema.
+Do not invent tables or columns. Reason internally; output only:
+<sql>SELECT ...</sql>
+
+Schema:
+{SCHEMA_CONTEXT}
+
+Question:
+{QUESTION}
+
+Evidence and verifier feedback (the question takes priority):
+{HINT}

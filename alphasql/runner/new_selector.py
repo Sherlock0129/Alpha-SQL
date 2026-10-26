@@ -54,7 +54,8 @@ def _path_candidates(paths: Any, route: str | None = None) -> list[GeneratedSQL]
                or getattr(node, "sql_query", None))
         if isinstance(sql, str) and sql.strip():
             selected = tuple((getattr(node, "selected_schema_dict", None) or {}).keys())
-            sqls.append(GeneratedSQL(sql.strip(), route or (
+            sqls.append(GeneratedSQL(sql.strip(), route or
+                getattr(node, "generation_route", None) or (
                 "linked_schema" if selected else "full_schema"), selected))
     return sqls
 
@@ -79,21 +80,31 @@ class FrozenPoolGenerator:
 
 
 class DirectLLMGenerator:
-    """Reuse the repository's full-schema plus linked-schema SQL generator."""
+    """Use D&C, skeleton and query-plan prompts with verifier-guided revisions."""
 
     def __init__(self, db_root: str, work_dir: str | Path, model: str,
-                 samples: int = 3, temperature: float = 0.8) -> None:
-        if samples < 1:
-            raise ValueError("samples must be positive")
+                 samples: int = 3, temperature: float = 0.8,
+                 prompt_routes: Sequence[str] = ("skeleton", "query_plan"),
+                 path_samples: int = 1) -> None:
+        from alphasql.runner.prompt_paths import PROMPT_ROUTES
+        if samples < 1 or path_samples < 1:
+            raise ValueError("Sample counts must be positive")
+        if set(prompt_routes) - set(PROMPT_ROUTES):
+            raise ValueError(f"Unknown prompt routes: {set(prompt_routes) - set(PROMPT_ROUTES)}")
         self.db_root, self.work_dir, self.model = db_root, Path(work_dir), model
         self.samples, self.temperature = samples, temperature
+        self.prompt_routes, self.path_samples = tuple(prompt_routes), path_samples
         self.supports_feedback = True
 
     def generate(self, task: Task, round_index: int,
                  feedback: GenerationFeedback | None = None) -> Sequence[GeneratedSQL]:
         if not task.table_schema_dict:
             raise ValueError("Direct generation needs a preprocessed Task with table_schema_dict")
-        from alphasql.runner.direct_candidate_runner import generate_one
+        from alphasql.algorithm.mcts.mcts_action import MCTSNodeType
+        from alphasql.runner.direct_candidate_runner import (
+            _root_node, deduplicate_paths, generate_one,
+        )
+        from alphasql.runner.prompt_paths import generate_prompt_paths
         round_dir = self.work_dir / str(task.question_id) / f"round_{round_index:02d}"
         round_dir.mkdir(parents=True, exist_ok=True)
         kwargs = {"model": self.model, "n": 1, "top_p": 0.95,
@@ -109,13 +120,40 @@ class DirectLLMGenerator:
         if feedback:
             hint = (hint + "\n\n" + feedback.hint()).strip()
         prompt_task = task.model_copy(update={"sql": None, "evidence": hint})
+        path = round_dir / f"{task.question_id}.pkl"
+        path.unlink(missing_ok=True)
         summary = generate_one((prompt_task, self.db_root, str(round_dir),
                                 kwargs, self.samples))
-        path = round_dir / f"{task.question_id}.pkl"
-        if not path.exists():
-            raise RuntimeError(f"SQL generation failed: {summary['warnings']}")
-        with path.open("rb") as handle:
-            return _path_candidates(pickle.load(handle))
+        if path.exists():
+            with path.open("rb") as handle:
+                paths = pickle.load(handle)
+        else:
+            paths = []
+        warnings = list(summary["warnings"])
+        if self.prompt_routes:
+            root = _root_node(prompt_task, self.db_root)
+            linked = next((node for candidate_path in paths for node in candidate_path
+                           if node.node_type == MCTSNodeType.SCHEMA_SELECTION), root)
+            for route in self.prompt_routes:
+                parent = linked if route == "skeleton" else root
+                new_paths, route_warnings = generate_prompt_paths(
+                    parent, kwargs, (route,), self.path_samples)
+                paths.extend(new_paths)
+                warnings.extend(route_warnings)
+        paths = deduplicate_paths(paths)
+        if not paths:
+            self._save_warnings(round_dir, warnings)
+            raise RuntimeError(f"SQL generation failed: {warnings}")
+        with path.open("wb") as handle:
+            pickle.dump(paths, handle)
+        self._save_warnings(round_dir, warnings)
+        return _path_candidates(paths)
+
+    @staticmethod
+    def _save_warnings(round_dir: Path, warnings: Sequence[str]) -> None:
+        (round_dir / "warnings.json").write_text(
+            json.dumps(list(warnings), ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8")
 
     def _feedback_generation(self, task: Task, round_dir: Path,
                              kwargs: dict[str, Any],
@@ -130,6 +168,7 @@ class DirectLLMGenerator:
         from alphasql.runner.direct_candidate_runner import (
             _root_node, deduplicate_paths, terminalize,
         )
+        from alphasql.runner.prompt_paths import REVISION_ROUTE, generate_prompt_paths
 
         configure_environment()
         actions.SQL_GENERATION_LLM_KWARGS_N = self.samples
@@ -137,10 +176,25 @@ class DirectLLMGenerator:
         root = _root_node(task.model_copy(update={"sql": None}), self.db_root)
         root.hint = (root.hint + "\n\n" + feedback.hint()).strip()
         paths = []
+        warnings = []
         if feedback.action == "relink":
-            for linked in SchemaSelectionAction().create_children_nodes(root, kwargs):
-                paths.extend(terminalize(node) for node in
-                             SQLGenerationAction().create_children_nodes(linked, kwargs))
+            try:
+                linked_nodes = SchemaSelectionAction().create_children_nodes(root, kwargs)
+            except Exception as error:
+                warnings.append(f"schema_selection: {type(error).__name__}: {error}")
+                linked_nodes = [root]
+            for linked in linked_nodes:
+                try:
+                    for node in SQLGenerationAction().create_children_nodes(linked, kwargs):
+                        node.generation_route = "relink"
+                        paths.append(terminalize(node))
+                except Exception as error:
+                    warnings.append(f"relink_generation: {type(error).__name__}: {error}")
+                if self.prompt_routes:
+                    new_paths, route_warnings = generate_prompt_paths(
+                        linked, kwargs, self.prompt_routes, self.path_samples)
+                    paths.extend(new_paths)
+                    warnings.extend(route_warnings)
         else:
             if not feedback.anchor_sql:
                 raise ValueError("SQL revision needs an anchor SQL")
@@ -162,14 +216,26 @@ class DirectLLMGenerator:
                         add_column_description=True, add_value_examples=True,
                         add_expanded_column_name=True)
                     for table in selected.values())
-            paths.extend(terminalize(node) for node in
-                         SQLRevisionAction().create_children_nodes(anchor, kwargs))
+            try:
+                for node in SQLRevisionAction().create_children_nodes(anchor, kwargs):
+                    node.generation_route = "revise"
+                    paths.append(terminalize(node))
+            except Exception as error:
+                warnings.append(f"sql_revision: {type(error).__name__}: {error}")
+            if self.prompt_routes:
+                new_paths, route_warnings = generate_prompt_paths(
+                    anchor, kwargs, (REVISION_ROUTE,), self.path_samples,
+                    feedback.anchor_sql)
+                paths.extend(new_paths)
+                warnings.extend(route_warnings)
         paths = deduplicate_paths(paths)
         if not paths:
-            raise RuntimeError(f"{feedback.action} produced no SQL candidates")
+            self._save_warnings(round_dir, warnings)
+            raise RuntimeError(f"{feedback.action} produced no SQL candidates: {warnings}")
         with (round_dir / f"{task.question_id}.pkl").open("wb") as handle:
             pickle.dump(paths, handle)
-        return _path_candidates(paths, route=feedback.action)
+        self._save_warnings(round_dir, warnings)
+        return _path_candidates(paths)
 
 
 def _canonical(sql: str) -> str:
@@ -356,7 +422,9 @@ def _run(args: argparse.Namespace) -> None:
         generator = FrozenPoolGenerator(args.candidate_dir, args.per_round)
     else:
         generator = DirectLLMGenerator(args.database_root_dir, output / "generated",
-                                       args.model, args.samples, args.temperature)
+                                       args.model, args.samples, args.temperature,
+                                       getattr(args, "prompt_paths", ("skeleton", "query_plan")),
+                                       getattr(args, "prompt_path_samples", 1))
     judge = JevPoolJudge(JevClient(settings), args.max_candidates)
     calibrator = DualCalibrator.load(args.calibrator) if args.calibrator else None
     pipeline = AdaptiveSQLSelector(generator, judge,
@@ -454,6 +522,10 @@ def main() -> None:
     run.add_argument("--candidate-dir")
     run.add_argument("--model", default="qwen3-coder-flash")
     run.add_argument("--samples", type=int, default=3)
+    run.add_argument("--prompt-paths", nargs="*", choices=("skeleton", "query_plan"),
+                     default=("skeleton", "query_plan"),
+                     help="Additional LLM prompt paths; pass with no values to disable")
+    run.add_argument("--prompt-path-samples", type=int, default=1)
     run.add_argument("--temperature", type=float, default=0.8)
     run.add_argument("--per-round", type=int, default=8)
     run.add_argument("--max-rounds", type=int, default=3)

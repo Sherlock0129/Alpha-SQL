@@ -154,8 +154,16 @@ class NewSelectorTest(unittest.TestCase):
     def test_direct_generator_routes_feedback_into_schema_and_revision_actions(self):
         task = self.task.model_copy(update={"table_schema_dict":
                                     DatabaseManager.CACHED_DATABASE_SCHEMA["testdb"].tables})
-        generator = DirectLLMGenerator(str(self.root), self.root / "generated", "fake", 1)
+        generator = DirectLLMGenerator(str(self.root), self.root / "generated", "fake", 1,
+                                       prompt_routes=("skeleton",))
         received = []
+        prompts = []
+
+        def prompt_llm(prompt, **kwargs):
+            prompts.append(prompt)
+            if "Candidate to inspect" in prompt:
+                return ["<sql>SELECT name FROM items WHERE name = 'Grace'</sql>"]
+            return ["<sql>SELECT name FROM items WHERE name = 'Ada'</sql>"]
 
         def select_schema(action, root, kwargs):
             received.append(("schema", root.hint, root.schema_context))
@@ -188,6 +196,7 @@ class NewSelectorTest(unittest.TestCase):
                     generate_sql),
               patch("alphasql.algorithm.mcts.mcts_action.SQLRevisionAction.create_children_nodes",
                     revise_sql),
+              patch("alphasql.runner.prompt_paths.call_openai", prompt_llm),
               patch("alphasql.llm_call.runtime.configure_environment")):
             relinked = generator.generate(task, 1, GenerationFeedback(
                 "relink", "schema", "SELECT missing FROM items", ("items",)))
@@ -196,10 +205,39 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(relinked[0].route, "relink")
         self.assertEqual(relinked[0].selected_tables, ("items",))
         self.assertEqual(revised[0].route, "revise")
+        self.assertIn("skeleton_linked", {item.route for item in relinked})
+        self.assertIn("contrastive_revision_linked", {item.route for item in revised})
         self.assertEqual([row[0] for row in received], ["schema", "generate", "revise"])
         self.assertIn("Reconsider table", received[0][1])
         self.assertEqual(received[2][1], "SELECT name FROM items")
         self.assertIn("items", received[2][2])
+        self.assertTrue(all("secret_gold" not in prompt for prompt in prompts))
+
+    def test_prompt_paths_salvage_failed_direct_generation_and_keep_provenance(self):
+        task = self.task.model_copy(update={"table_schema_dict":
+                                    DatabaseManager.CACHED_DATABASE_SCHEMA["testdb"].tables})
+        generator = DirectLLMGenerator(str(self.root), self.root / "generated", "fake", 1,
+                                       prompt_routes=("skeleton", "query_plan"))
+        prompts = []
+
+        def llm(prompt, **kwargs):
+            prompts.append(prompt)
+            if "clause skeleton" in prompt:
+                return ["<sql>SELECT name FROM items WHERE name = 'Ada'</sql>"]
+            return ["<sql>SELECT name FROM items WHERE name = 'Grace'</sql>"]
+
+        with (patch("alphasql.runner.direct_candidate_runner.generate_one",
+                    return_value={"warnings": ["base route failed"]}),
+              patch("alphasql.runner.prompt_paths.call_openai", llm)):
+            candidates = generator.generate(task, 0)
+        self.assertEqual({item.route for item in candidates},
+                         {"skeleton_full", "query_plan_full"})
+        self.assertEqual(len(prompts), 2)
+        self.assertTrue(all("secret_gold" not in prompt for prompt in prompts))
+        self.assertTrue((self.root / "generated" / "1" / "round_00" / "1.pkl").is_file())
+        self.assertEqual(json.loads((self.root / "generated" / "1" /
+                                     "round_00" / "warnings.json").read_text()),
+                         ["base route failed"])
 
     def test_offline_labels_use_execution_multiset_and_do_not_store_sql(self):
         result = {"question_id": 1, "db_id": "testdb", "coverage_raw": 0.7,

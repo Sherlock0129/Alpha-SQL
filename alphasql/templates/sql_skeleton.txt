@@ -1,0 +1,16 @@
+You are a SQLite expert. Produce one read-only SQL query for the question.
+
+Build a clause skeleton before filling it in: required output columns, FROM/JOIN
+path, filters and literal values, grouping/aggregation, then ordering/limits.
+Check that each condition in the question has a corresponding clause. Keep only
+tables and columns supported by the schema. Reason internally; output only:
+<sql>SELECT ...</sql>
+
+Schema:
+{SCHEMA_CONTEXT}
+
+Question:
+{QUESTION}
+
+Evidence and verifier feedback (the question takes priority):
+{HINT}

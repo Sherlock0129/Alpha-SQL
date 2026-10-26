@@ -1,0 +1,19 @@
+You are a SQLite expert. The following candidate may be semantically wrong.
+Compare it clause by clause with the question: requested output, table and join
+path, filters and literals, aggregation, row multiplicity, and ordering. Keep
+correct clauses; change the clauses needed to answer the question. The verifier
+feedback is uncertain, so check it against the question and schema. Do not
+make a cosmetic rewrite. Output one read-only SQLite query only:
+<sql>SELECT ...</sql>
+
+Schema:
+{SCHEMA_CONTEXT}
+
+Question:
+{QUESTION}
+
+Evidence and verifier feedback:
+{HINT}
+
+Candidate to inspect:
+{ANCHOR_SQL}
