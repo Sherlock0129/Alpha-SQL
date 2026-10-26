@@ -91,6 +91,13 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(len(result["rounds"]), 2)
         self.assertFalse(result["uncertain"])
         self.assertEqual(result["confidence_kind"], "raw_jev_judgement")
+        self.assertEqual(result["schema_version"], 2)
+        self.assertEqual(result["question"], "Name Ada")
+        self.assertNotIn("secret_gold", json.dumps(result))
+        self.assertEqual(result["rounds"][0]["jev"]["pool_covered"], 0.2)
+        self.assertEqual(result["rounds"][0]["candidates"][0]["candidate_raw"], 0.3)
+        self.assertEqual(result["rounds"][1]["candidates"][0]["candidate_raw"], 0.1)
+        self.assertEqual(result["rounds"][1]["feedback_applied_detail"]["action"], "relink")
 
     def test_invalid_and_empty_sql_never_get_nonzero_probability(self):
         generator = ScriptedGenerator([["SELECT missing FROM items"]])

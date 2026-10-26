@@ -95,3 +95,63 @@ python -m alphasql.runner.new_selector train `
 ```
 
 当前训练部分针对 **JEV 判断的概率校准和单候选选择**；它不更新 SQL 生成大模型的权重。若要训练生成器本身，需要单独加入 SFT/RL 数据路径、固定候选生成预算和独立评测，不能把这里的校准结果当作生成模型的改进。
+
+## 逐轮训练数据构造（v2）
+
+新运行结果在顶层保存原问题、evidence、完整数据库 Schema、生成时实际使用的 Schema、生成器配置及代码/提示模板哈希。每轮保存截至当时的**全部**候选 SQL、来源路径、所选表列、执行摘要、六类 JEV 原始输出、候选分数、已执行反馈和下一轮反馈。快照独立于最终轮的重评分数；不含标准答案。运行时用 `--generator-version` 为同一批模型与提示配置指定固定标签；同时保存自动计算的 `source_sha256`，后续数据划分拒绝混入不同源码版本。
+
+下面的前两步只读本地运行结果与训练集标准 SQL，**不会调用模型**。参考 SQL 只进入离线标注函数，不写入富标签或动作输入；输出中的执行等价标签仍只是单一数据库上的近似正确性。
+
+```powershell
+python -m alphasql.runner.selector_data label `
+  --results-dir results/new_selector/train `
+  --data-path data/bird/train/train.json `
+  --database-root-dir data/bird/train/train_databases `
+  --output-path results/new_selector/data/rich.jsonl `
+  --calibration-output results/new_selector/data/calibration.jsonl
+
+python -m alphasql.runner.selector_data split `
+  --labels results/new_selector/data/rich.jsonl `
+  --output-dir results/new_selector/data/split `
+  --validation-fraction 0.15 --test-fraction 0.15 --seed 42
+```
+
+`rich.jsonl` 每题包含各轮池覆盖 EX 标签、每条候选的 EX 标签、可执行近似错误 SQL 的 AST 编辑距离标签、四类**弱**结构诊断多标签、已发生的单路径反馈收益、以及分开的 `generation_hard` / `selection_hard` / `covered_easy` 分层。近似错误 SQL 必须实际执行成功、结果不等于参考结果，且 AST 编辑距离不超过阈值。`split` 按数据库互斥地产生 train、validation、test，并为现有校准器另导出不含 SQL 文本的 `*_calibration.jsonl`。候选校准课程先看已覆盖池，按正确候选与错误候选的分数差从易到难；覆盖校准课程在早期同时看到正负池，避免全是覆盖正例。
+
+结构诊断不能作为人工真值。先抽样核查；此文件**包含参考 SQL**，只应留在离线标注环境，不能送入推理或动作探测：
+
+```powershell
+python -m alphasql.runner.selector_data audit `
+  --labels results/new_selector/data/split/train.jsonl `
+  --data-path data/bird/train/train.json `
+  --output-path results/new_selector/data/diagnostic_audit.jsonl `
+  --per-group 20
+```
+
+要为反馈动作造标签，先从训练分区的三种难度层抽相同的首轮状态。清单里的问题、Schema 和 SQL 来自原始运行结果，**不含任何标准答案或离线正确性标签**。同一个 `state_id` 的四个动作共享初始候选池哈希、生成器代码哈希和候选/模型调用预算。
+
+```powershell
+python -m alphasql.runner.selector_data prepare-actions `
+  --labels results/new_selector/data/split/train.jsonl `
+  --results-dir results/new_selector/train `
+  --output-path results/new_selector/data/action_states.jsonl `
+  --per-stratum 50 --max-new-candidates 4 --max-model-calls 3
+```
+
+`probe-actions` 会调用配置的 SQL LLM 和 JEV 服务；仅在这些外部调用及其传输的问题、Schema、SQL 已获授权后运行。它分别从同一首轮状态执行 `relink`、`revise`、`diversify`、`adjudicate`。普通 LLM 请求设定每动作调用上限并记录实际 token；JEV 调用另计入上限。每个动作结果独立保存，失败可续跑。`max_tokens` 可用作事后上限校验；API 调用前无法保证实际输入 token 不超过该值。随后离线计算四个动作的候选覆盖增量、最终选择正确性增量和成本；只有四臂齐全且 token 用量完整的状态才有 `best_observed_action`。
+
+```powershell
+python -m alphasql.runner.selector_data probe-actions `
+  --manifest results/new_selector/data/action_states.jsonl `
+  --database-root-dir data/bird/train/train_databases `
+  --output-dir results/new_selector/data/action_runs
+
+python -m alphasql.runner.selector_data label-actions `
+  --arms results/new_selector/data/action_runs/arms.jsonl `
+  --labels results/new_selector/data/split/train.jsonl `
+  --data-path data/bird/train/train.json `
+  --database-root-dir data/bird/train/train_databases `
+  --output-path results/new_selector/data/action_labels.jsonl
+```
+
+动作标签是**一次独立探测的观察结果**，受采样随机性影响。后续训练策略前应为关键状态重复探测、报告每动作成功率，并在完全独立的数据库上验证。旧版 `schema_version=1` 结果缺少逐轮六类输出，不能无损转换为这套富数据；需要重新运行或将缺失项明确标为未知。

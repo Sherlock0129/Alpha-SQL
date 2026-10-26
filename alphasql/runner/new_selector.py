@@ -15,6 +15,7 @@ import json
 from pathlib import Path
 import pickle
 import random
+import copy
 from typing import Any, Mapping, Protocol, Sequence
 
 import sqlglot
@@ -41,6 +42,7 @@ class GeneratedSQL:
     sql: str
     route: str
     selected_tables: tuple[str, ...] = ()
+    selected_columns: tuple[str, ...] = ()
 
 
 def _path_candidates(paths: Any, route: str | None = None) -> list[GeneratedSQL]:
@@ -53,10 +55,14 @@ def _path_candidates(paths: Any, route: str | None = None) -> list[GeneratedSQL]
                or getattr(node, "revised_sql_query", None)
                or getattr(node, "sql_query", None))
         if isinstance(sql, str) and sql.strip():
-            selected = tuple((getattr(node, "selected_schema_dict", None) or {}).keys())
+            selected_schema = getattr(node, "selected_schema_dict", None) or {}
+            selected = tuple(selected_schema.keys())
+            columns = tuple(f"{table}.{column}" for table, item in selected_schema.items()
+                            for column in (item.get("columns", {}) if isinstance(item, Mapping)
+                                           else getattr(item, "columns", {})))
             sqls.append(GeneratedSQL(sql.strip(), route or
                 getattr(node, "generation_route", None) or (
-                "linked_schema" if selected else "full_schema"), selected))
+                "linked_schema" if selected else "full_schema"), selected, columns))
     return sqls
 
 
@@ -258,6 +264,41 @@ def _schema_context(db_id: str, db_root: str) -> dict[str, Any]:
     }}
 
 
+def _generator_provenance(generator: CandidateGenerator,
+                          version: str | None = None) -> dict[str, Any]:
+    config: dict[str, Any] = {"kind": type(generator).__name__}
+    if isinstance(generator, DirectLLMGenerator):
+        config.update(model=generator.model, samples=generator.samples,
+                      temperature=generator.temperature,
+                      prompt_routes=list(generator.prompt_routes),
+                      path_samples=generator.path_samples)
+    elif isinstance(generator, FrozenPoolGenerator):
+        config.update(candidate_dir=str(generator.candidate_dir.resolve()),
+                      per_round=generator.per_round)
+    source_paths = [Path(__file__), Path(__file__).with_name("prompt_paths.py"),
+                    Path(__file__).with_name("direct_candidate_runner.py"),
+                    Path(__file__).parents[1] / "algorithm" / "mcts" / "mcts_action.py",
+                    Path(__file__).parents[1] / "llm_call" / "prompt_factory.py"]
+    source_paths.extend(sorted((Path(__file__).parents[1] / "templates").glob("*.txt")))
+    digest = hashlib.sha256()
+    for path in source_paths:
+        if path.is_file():
+            digest.update(path.name.encode("utf-8"))
+            digest.update(path.read_bytes())
+    config["source_sha256"] = digest.hexdigest()
+    config["version"] = version or "sha256:" + hashlib.sha256(
+        json.dumps(config, sort_keys=True).encode("utf-8")).hexdigest()
+    return config
+
+
+def _judge_provenance(judge: JevPoolJudge) -> dict[str, Any]:
+    settings = getattr(getattr(judge, "client", None), "settings", None)
+    path = Path(__file__).parents[1] / "algorithm" / "selection" / "dual_confidence.py"
+    return {"kind": type(judge).__name__,
+            "model": getattr(settings, "model", None),
+            "questions_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+
+
 @dataclass(frozen=True)
 class SelectorSettings:
     max_rounds: int = 3
@@ -276,10 +317,18 @@ class SelectorSettings:
 class AdaptiveSQLSelector:
     def __init__(self, generator: CandidateGenerator, judge: JevPoolJudge,
                  settings: SelectorSettings | None = None,
-                 calibrator: DualCalibrator | None = None) -> None:
+                 calibrator: DualCalibrator | None = None,
+                 generator_version: str | None = None) -> None:
         self.generator, self.judge = generator, judge
         self.settings = settings or SelectorSettings()
         self.calibrator = calibrator
+        self.generator_provenance = _generator_provenance(generator, generator_version)
+        self.judge_provenance = _judge_provenance(judge)
+        self.calibrator_provenance = ({"kind": "dual_logistic",
+            "sha256": hashlib.sha256(json.dumps(calibrator.to_dict(),
+                                              sort_keys=True).encode("utf-8")).hexdigest(),
+            "model": calibrator.to_dict()}
+            if calibrator else {"kind": "raw_jev"})
         if self.settings.max_candidates > judge.max_candidates:
             raise ValueError("Selector candidate limit exceeds Jev judge limit")
 
@@ -316,6 +365,7 @@ class AdaptiveSQLSelector:
                                    "source_round": round_index,
                                    "route": item.route,
                                    "selected_tables": list(item.selected_tables),
+                                   "selected_columns": list(item.selected_columns),
                                    "execution": execution.summary()})
                 new_count += 1
             if candidates:
@@ -333,11 +383,37 @@ class AdaptiveSQLSelector:
             else:
                 coverage, candidate_probs = 0.0, []
             best = max(candidate_probs, default=0.0)
+            snapshot = [dict(copy.deepcopy(item), candidate_raw=last.candidate_raw[i],
+                             candidate_probability=candidate_probs[i])
+                        for i, item in enumerate(candidates)] if last else []
             round_record = {"round": round_index, "new_candidates": new_count,
                             "pool_size": len(candidates), "coverage": coverage,
                             "best_candidate_probability": best,
+                            "question": task.question, "evidence": task.evidence,
+                            "schema_hypotheses": [
+                                {"candidate_index": i,
+                                 "tables": list(item.get("selected_tables", [])),
+                                 "columns": list(item.get("selected_columns", [])),
+                                 "scope": "linked" if item.get("selected_tables") else "full"}
+                                for i, item in enumerate(candidates)],
+                            "candidates": snapshot,
+                            "new_candidate_indices": [i for i, item in enumerate(candidates)
+                                                      if item["source_round"] == round_index],
+                            "jev": {"called": bool(last and any(
+                                item["execution"]["valid"] for item in candidates)),
+                                    "pool_covered": last.coverage_raw if last else 0.0,
+                                    "candidate": list(last.candidate_raw) if last else [],
+                                    "gap_schema": last.diagnostics.get("schema") if last else None,
+                                    "gap_projection": last.diagnostics.get("projection") if last else None,
+                                    "gap_filters": last.diagnostics.get("filters") if last else None,
+                                    "gap_logic": last.diagnostics.get("logic") if last else None,
+                                    "usage": {"input_tokens": last.usage.input_tokens,
+                                              "output_tokens": last.usage.output_tokens}
+                                    if last else {"input_tokens": 0, "output_tokens": 0}},
                             "generation_action": applied_feedback.action if applied_feedback
                             else "initial" if round_index == 0 else "fixed_pool",
+                            "feedback_applied_detail": applied_feedback.to_dict()
+                            if applied_feedback else None,
                             "feedback_applied": applied_feedback is not None,
                             "diagnostics": dict(last.diagnostics) if last else {}}
             rounds.append(round_record)
@@ -362,7 +438,15 @@ class AdaptiveSQLSelector:
                 else raw if i in valid else 0.0)
         selected = max(valid, key=lambda i: (candidates[i]["candidate_probability"], -i)) if valid else None
         return {
-            "schema_version": 1, "question_id": task.question_id, "db_id": task.db_id,
+            "schema_version": 2, "question_id": task.question_id, "db_id": task.db_id,
+            "question": task.question, "evidence": task.evidence,
+            "full_schema": schema,
+            "generation_schema": {
+                name: table.to_dict() if hasattr(table, "to_dict") else table
+                for name, table in (task.table_schema_dict or {}).items()},
+            "generator": self.generator_provenance,
+            "judge": self.judge_provenance,
+            "calibrator": self.calibrator_provenance,
             "selected_index": selected,
             "selected_sql": candidates[selected]["sql"] if selected is not None else None,
             "coverage_raw": last.coverage_raw,
@@ -430,7 +514,7 @@ def _run(args: argparse.Namespace) -> None:
     pipeline = AdaptiveSQLSelector(generator, judge,
         SelectorSettings(args.max_rounds, args.max_candidates,
                          args.coverage_stop, args.candidate_stop, args.execution_timeout),
-        calibrator)
+        calibrator, getattr(args, "generator_version", None))
     failures = []
     for task in tasks:
         path = output / f"{task.question_id}.json"
@@ -521,6 +605,7 @@ def main() -> None:
     run.add_argument("--generator", choices=("direct", "pool"), default="direct")
     run.add_argument("--candidate-dir")
     run.add_argument("--model", default="qwen3-coder-flash")
+    run.add_argument("--generator-version", help="Immutable tag for the generator and prompts")
     run.add_argument("--samples", type=int, default=3)
     run.add_argument("--prompt-paths", nargs="*", choices=("skeleton", "query_plan"),
                      default=("skeleton", "query_plan"),

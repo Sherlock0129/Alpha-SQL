@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 import json
 import math
@@ -81,6 +82,45 @@ def curriculum_fraction(epoch: int, epochs: int, start_fraction: float = 0.3) ->
     return min(1.0, start_fraction + (1 - start_fraction) * epoch / (0.6 * (epochs - 1)))
 
 
+def curriculum_order(rows: Sequence[Mapping[str, Any]], head: str) -> list[Mapping[str, Any]]:
+    """Keep generation coverage and within-pool selection difficulty distinct."""
+    if head == "candidate":
+        def selection_key(row: Mapping[str, Any]) -> tuple[float, float, str]:
+            if not int(row["covered_label"]):
+                return (1.0, 1.0, str(row["question_id"]))
+            given = row.get("selection_difficulty")
+            if given is None:
+                positive = [float(item["raw"]) for item in row["candidates"]
+                            if item["valid"] and item["label"]]
+                negative = [float(item["raw"]) for item in row["candidates"]
+                            if item["valid"] and not item["label"]]
+                best = max(positive, default=0.0)
+                margin = best - max(negative, default=0.0)
+                given = max(0.0, 1.0 - best, (1.0 - margin) / 2.0)
+            return (0.0, float(given), str(row["question_id"]))
+        return sorted(rows, key=selection_key)
+    if head != "coverage":
+        raise ValueError(f"Unknown curriculum head: {head}")
+    # A coverage calibrator needs both positive and negative pools even in its
+    # earliest prefix. Order each class by model error, then interleave them.
+    buckets = [[], []]
+    for row in rows:
+        label = int(row["covered_label"])
+        buckets[label].append(row)
+    queues = []
+    for bucket in buckets:
+        bucket.sort(key=lambda row: (abs(float(row["coverage_raw"])
+                                          - int(row["covered_label"])),
+                                     str(row["question_id"])))
+        queues.append(deque(bucket))
+    ordered = []
+    while queues[0] or queues[1]:
+        for bucket in queues:
+            if bucket:
+                ordered.append(bucket.popleft())
+    return ordered
+
+
 def fit_head(
     train: Sequence[Mapping[str, Any]], validation: Sequence[Mapping[str, Any]],
     head: str, epochs: int = 100, learning_rate: float = 0.03, l2: float = 1e-3,
@@ -89,9 +129,7 @@ def fit_head(
         raise ValueError("Head and nonempty train/validation records are required")
     if epochs < 1 or learning_rate <= 0 or l2 < 0:
         raise ValueError("Invalid optimization settings")
-    # Difficulty is fixed from the generating model's raw *pool* judgement.
-    ordered = sorted(train, key=lambda row: (-float(row["coverage_raw"]),
-                                             str(row["question_id"])))
+    ordered = curriculum_order(train, head)
     if not any(_examples(row, head) for row in ordered):
         raise ValueError(f"Train has no usable {head} labels")
     bias, slope = 0.0, 1.0
