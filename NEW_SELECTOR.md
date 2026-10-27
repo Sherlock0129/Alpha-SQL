@@ -36,6 +36,8 @@ JEV 同时回答两类正确性问题和四类诊断问题
 
 ```powershell
 # 在 .env.local 或当前进程环境中设置 AIGC_API_KEY 与 TYPESAFE_API_KEY。
+# 若本机系统代理会拦截学校域名，在已连接校园网/学校 VPN 时直连该域名。
+$env:NO_PROXY = "aigc-api.hkust-gz.edu.cn"
 $env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300/llm_usage.jsonl"
 & .\.venv\Scripts\python.exe -m alphasql.runner.new_selector run `
   --tasks-file-path data/preprocessed/schema_pool_300/train/tasks.pkl `
