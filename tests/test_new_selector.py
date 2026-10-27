@@ -1,5 +1,6 @@
 import copy
 import json
+import pickle
 import sqlite3
 import tempfile
 import unittest
@@ -21,8 +22,8 @@ from alphasql.jev.client import JevClient
 from alphasql.jev.models import Usage
 from alphasql.jev.runtime import JevSettings
 from alphasql.runner.new_selector import (
-    AdaptiveSQLSelector, DirectLLMGenerator, GeneratedSQL, SelectorSettings,
-    _generator_provenance, _split, _train, label_result,
+    AdaptiveSQLSelector, DirectLLMGenerator, FrozenPoolGenerator, GeneratedSQL,
+    SelectorSettings, _collect_pool, _generator_provenance, _split, _train, label_result,
 )
 from alphasql.runner.task import Task
 
@@ -272,6 +273,30 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(calls[0]["extra_body"],
                          {"chat_template_kwargs": {"enable_thinking": False}})
         self.assertNotIn("school-secret", json.dumps(_generator_provenance(generator)))
+
+    def test_initial_pool_collection_freezes_candidates_without_jev(self):
+        tasks_path = self.root / "tasks.pkl"
+        with tasks_path.open("wb") as handle:
+            pickle.dump([self.task], handle)
+        generator = ScriptedGenerator([[
+            GeneratedSQL("SELECT name FROM items WHERE name = 'Ada'", "query_plan"),
+            GeneratedSQL("SELECT name FROM items WHERE name = 'Ada'", "duplicate"),
+        ]])
+        output = self.root / "pool"
+        args = Namespace(tasks_file_path=str(tasks_path), database_root_dir=str(self.root),
+                         output_dir=str(output), generator_version="frozen-test",
+                         max_candidates=8, execution_timeout=10, question_id=None,
+                         limit=None, overwrite=False)
+        with patch("alphasql.runner.new_selector._direct_generator", return_value=generator):
+            _collect_pool(args)
+        record = json.loads((output / "1.json").read_text(encoding="utf-8"))
+        self.assertEqual(record["jev_status"], "deferred")
+        self.assertEqual(len(record["candidates"]), 1)
+        self.assertNotIn("secret_gold", json.dumps(record))
+        frozen = FrozenPoolGenerator(output / "candidates")
+        self.assertEqual(frozen.generate(self.task, 0)[0].route, "query_plan")
+        self.assertEqual(_generator_provenance(frozen)["source_generator"],
+                         record["generator"])
 
     def test_offline_labels_use_execution_multiset_and_do_not_store_sql(self):
         result = {"question_id": 1, "db_id": "testdb", "coverage_raw": 0.7,

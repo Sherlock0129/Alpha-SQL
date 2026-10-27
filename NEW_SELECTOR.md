@@ -51,6 +51,20 @@ $env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300_nothink/llm_us
 
 五题烟测通过后，保留相同输出目录和全部配置，移除 `--limit 5` 即可续采剩余题。完整采集与训练安排见 [SELECTOR_DATA_TRAINING_PLAN.md](SELECTOR_DATA_TRAINING_PLAN.md)。
 
+若 JEV 服务暂不可用，可只冻结**首轮**候选池。`collect-pool` 仅调用 SQL LLM，保存每题的候选 SQL、来源路径、执行摘要、生成器配置与源码哈希，以及可由 `--generator pool` 读取的 `candidates/*.pkl`；不发送请求给 TypeSafe，也不读取参考 SQL。这些记录的 `jev_status` 为 `deferred`，不能直接当作完整 v2 逐轮训练数据。恢复 JEV 后可以在固定池上评估选择器；反馈生成的后续轮次仍须运行上面的完整 `run` 入口。
+
+```powershell
+$env:NO_PROXY = "aigc-api.hkust-gz.edu.cn"
+$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_initial_pool/llm_usage.jsonl"
+& .\.venv\Scripts\python.exe -m alphasql.runner.new_selector collect-pool `
+  --tasks-file-path data/preprocessed/schema_pool_300/train/tasks.pkl `
+  --database-root-dir data/bird/train/train_databases `
+  --output-dir results/new_selector/hkust_qwen38_initial_pool `
+  --llm-provider hkustgz --model Qwen3.8-27B `
+  --generator-version hkustgz-qwen38-initial-pool-v1 `
+  --samples 2 --prompt-path-samples 1 --max-candidates 16 --limit 5
+```
+
 推理前把 `Task.sql` 清空。JEV 只看到问题、证据、Schema、候选 SQL 和执行摘要；标准答案只在离线 `label` 阶段使用。无可执行 SQL 时，候选集覆盖值固定为 0，不能让校准器把它抬高。执行成功但返回空行是有效候选。
 
 `coverage_raw` 和 `candidate_raw` 是 JEV 的原始判断，**并非已经验证的统计概率**。训练后加载 `dual_calibrator.json` 才输出 `coverage_probability` / `candidate_probability`，校准质量以独立验证数据库上的 Brier 分数检验。候选集覆盖概率和单候选正确概率分别拟合，不能把 `max(candidate_probability)` 当作前者。

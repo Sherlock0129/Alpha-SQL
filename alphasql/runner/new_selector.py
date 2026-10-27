@@ -81,7 +81,8 @@ class FrozenPoolGenerator:
                  feedback: GenerationFeedback | None = None) -> Sequence[GeneratedSQL]:
         path = self.candidate_dir / f"{task.question_id}.pkl"
         with path.open("rb") as handle:
-            sqls = _path_candidates(pickle.load(handle))
+            saved = pickle.load(handle)
+        sqls = saved if saved and all(isinstance(item, GeneratedSQL) for item in saved) else _path_candidates(saved)
         start = round_index * self.per_round
         return sqls[start:start + self.per_round]
 
@@ -292,6 +293,10 @@ def _generator_provenance(generator: CandidateGenerator,
     elif isinstance(generator, FrozenPoolGenerator):
         config.update(candidate_dir=str(generator.candidate_dir.resolve()),
                       per_round=generator.per_round)
+        manifest_path = generator.candidate_dir.parent / "manifest.json"
+        if manifest_path.is_file():
+            config["source_generator"] = json.loads(
+                manifest_path.read_text(encoding="utf-8"))["generator"]
     source_paths = [Path(__file__), Path(__file__).with_name("prompt_paths.py"),
                     Path(__file__).with_name("direct_candidate_runner.py"),
                     Path(__file__).parents[1] / "algorithm" / "mcts" / "mcts_action.py",
@@ -507,40 +512,122 @@ def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def _run(args: argparse.Namespace) -> None:
-    settings = JevSettings.from_environment()
-    settings.require_api_key()
-    output = Path(args.output_dir)
-    output.mkdir(parents=True, exist_ok=True)
+def _tasks(args: argparse.Namespace) -> list[Task]:
     with Path(args.tasks_file_path).open("rb") as handle:
         tasks = pickle.load(handle)
     if args.question_id is not None:
         tasks = [task for task in tasks if str(task.question_id) == args.question_id]
     if args.limit is not None:
         tasks = tasks[:args.limit]
+    return tasks
+
+
+def _direct_generator(args: argparse.Namespace, output: Path) -> DirectLLMGenerator:
+    from alphasql.llm_call.runtime import configure_environment
+    configure_environment()
+    provider = getattr(args, "llm_provider", "project")
+    if provider == "hkustgz":
+        model = args.model or "Qwen3.8-27B"
+        base_url = "https://aigc-api.hkust-gz.edu.cn/api/v2"
+        api_key_env = "AIGC_API_KEY"
+        extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
+        if not os.environ.get(api_key_env):
+            raise ValueError(f"{api_key_env} is required for {base_url}; no task was started")
+    else:
+        model = args.model or "qwen3-coder-flash"
+        base_url = api_key_env = extra_body = None
+    return DirectLLMGenerator(args.database_root_dir, output / "generated",
+                              model, args.samples, args.temperature,
+                              getattr(args, "prompt_paths", ("skeleton", "query_plan")),
+                              getattr(args, "prompt_path_samples", 1),
+                              base_url, api_key_env, extra_body)
+
+
+def _collect_pool(args: argparse.Namespace) -> None:
+    """Freeze initial SQL candidates without calling JEV or using reference SQL."""
+    output = Path(args.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    candidate_dir = output / "candidates"
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+    tasks = _tasks(args)
+    generator = _direct_generator(args, output)
+    provenance = _generator_provenance(generator, args.generator_version)
+    manifest_path = output / "manifest.json"
+    if manifest_path.is_file():
+        existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if existing.get("generator") != provenance:
+            raise ValueError("Initial pool output has a different frozen generator")
+    else:
+        manifest_path.write_text(json.dumps({"pool_schema_version": 1,
+                                            "generator": provenance}, ensure_ascii=False,
+                                           indent=2) + "\n", encoding="utf-8")
+    failures = []
+    collected = 0
+    for task in tasks:
+        result_path = output / f"{task.question_id}.json"
+        pool_path = candidate_dir / f"{task.question_id}.pkl"
+        if result_path.exists() and pool_path.exists() and not args.overwrite:
+            continue
+        try:
+            generated = generator.generate(task.model_copy(update={"sql": None}), 0)
+            selected: list[GeneratedSQL] = []
+            records: list[dict[str, Any]] = []
+            seen: set[str] = set()
+            db_path = Path(args.database_root_dir) / task.db_id / f"{task.db_id}.sqlite"
+            for item in generated:
+                canonical = _canonical(item.sql)
+                if not canonical or canonical in seen:
+                    continue
+                if len(selected) >= args.max_candidates:
+                    break
+                seen.add(canonical)
+                execution = validate_sql(str(db_path), item.sql, args.execution_timeout)
+                selected.append(item)
+                records.append({"sql": item.sql, "canonical_sql": canonical,
+                                "route": item.route,
+                                "selected_tables": list(item.selected_tables),
+                                "selected_columns": list(item.selected_columns),
+                                "execution": execution.summary()})
+            if not selected:
+                raise RuntimeError("Initial generation produced no SQL candidates")
+            result = {"pool_schema_version": 1, "question_id": task.question_id,
+                      "db_id": task.db_id, "question": task.question,
+                      "evidence": task.evidence,
+                      "full_schema": _schema_context(task.db_id, args.database_root_dir),
+                      "generator": provenance, "candidates": records,
+                      "jev_status": "deferred"}
+            temporary_pool = pool_path.with_suffix(".pkl.tmp")
+            with temporary_pool.open("wb") as handle:
+                pickle.dump(selected, handle)
+            temporary_pool.replace(pool_path)
+            temporary_result = result_path.with_suffix(".json.tmp")
+            temporary_result.write_text(json.dumps(result, ensure_ascii=False,
+                                                   allow_nan=False, indent=2) + "\n",
+                                        encoding="utf-8")
+            temporary_result.replace(result_path)
+            collected += 1
+        except Exception as exc:
+            failures.append({"question_id": task.question_id,
+                             "error_type": type(exc).__name__, "error": str(exc)})
+    (output / "failures.json").write_text(json.dumps(failures, ensure_ascii=False,
+                                                   indent=2) + "\n", encoding="utf-8")
+    print({"tasks": len(tasks), "collected": collected, "failures": len(failures),
+           "output": str(output), "jev_called": False})
+
+
+def _run(args: argparse.Namespace) -> None:
+    settings = JevSettings.from_environment()
+    settings.require_api_key()
+    output = Path(args.output_dir)
+    output.mkdir(parents=True, exist_ok=True)
+    tasks = _tasks(args)
     generator: CandidateGenerator
     if args.generator == "pool":
         if not args.candidate_dir:
             raise ValueError("--candidate-dir is required for pool generation")
         generator = FrozenPoolGenerator(args.candidate_dir, args.per_round)
     else:
-        provider = getattr(args, "llm_provider", "project")
-        if provider == "hkustgz":
-            model = args.model or "Qwen3.8-27B"
-            base_url = "https://aigc-api.hkust-gz.edu.cn/api/v2"
-            api_key_env = "AIGC_API_KEY"
-            extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
-            if not os.environ.get(api_key_env):
-                raise ValueError(f"{api_key_env} is required for {base_url}; no task was started")
-        else:
-            model = args.model or "qwen3-coder-flash"
-            base_url = api_key_env = None
-            extra_body = None
-        generator = DirectLLMGenerator(args.database_root_dir, output / "generated",
-                                       model, args.samples, args.temperature,
-                                       getattr(args, "prompt_paths", ("skeleton", "query_plan")),
-                                       getattr(args, "prompt_path_samples", 1),
-                                       base_url, api_key_env, extra_body)
+        generator = _direct_generator(args, output)
     judge = JevPoolJudge(JevClient(settings), args.max_candidates)
     calibrator = DualCalibrator.load(args.calibrator) if args.calibrator else None
     pipeline = AdaptiveSQLSelector(generator, judge,
@@ -656,6 +743,24 @@ def main() -> None:
     run.add_argument("--limit", type=int)
     run.add_argument("--overwrite", action="store_true")
     run.set_defaults(func=_run)
+    pool = sub.add_parser("collect-pool", help="Freeze initial SQL candidates without JEV")
+    pool.add_argument("--tasks-file-path", required=True)
+    pool.add_argument("--database-root-dir", required=True)
+    pool.add_argument("--output-dir", required=True)
+    pool.add_argument("--llm-provider", choices=("project", "hkustgz"), default="project")
+    pool.add_argument("--model")
+    pool.add_argument("--generator-version")
+    pool.add_argument("--samples", type=int, default=3)
+    pool.add_argument("--prompt-paths", nargs="*", choices=("skeleton", "query_plan"),
+                      default=("skeleton", "query_plan"))
+    pool.add_argument("--prompt-path-samples", type=int, default=1)
+    pool.add_argument("--temperature", type=float, default=0.8)
+    pool.add_argument("--max-candidates", type=int, default=16)
+    pool.add_argument("--execution-timeout", type=int, default=60)
+    pool.add_argument("--question-id")
+    pool.add_argument("--limit", type=int)
+    pool.add_argument("--overwrite", action="store_true")
+    pool.set_defaults(func=_collect_pool)
     label = sub.add_parser("label")
     label.add_argument("--results-dir", required=True)
     label.add_argument("--data-path", required=True)
