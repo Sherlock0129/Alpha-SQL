@@ -65,6 +65,8 @@ $env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_initial_pool/llm_u
   --samples 2 --prompt-path-samples 1 --max-candidates 16 --limit 5
 ```
 
+冻结池完成后，使用 `python -m alphasql.runner.initial_pool_data label --pool-dirs <一个或多个候选池目录> --data-path data/bird/train/train.json --database-root-dir data/bird/train/train_databases --output-path <标签文件>` 离线计算执行等价标签；再用 `initial_pool_data split --labels <标签文件> --output-dir <划分目录>` 按数据库划分。此标签文件不含标准 SQL、问题文本或候选 SQL；弱结构诊断只用于抽查，不能充当人工错误真值。没有 JEV 原始分数时，不能用它训练 JEV 校准器或反馈动作策略。
+
 推理前把 `Task.sql` 清空。JEV 只看到问题、证据、Schema、候选 SQL 和执行摘要；标准答案只在离线 `label` 阶段使用。无可执行 SQL 时，候选集覆盖值固定为 0，不能让校准器把它抬高。执行成功但返回空行是有效候选。
 
 `coverage_raw` 和 `candidate_raw` 是 JEV 的原始判断，**并非已经验证的统计概率**。训练后加载 `dual_calibrator.json` 才输出 `coverage_probability` / `candidate_probability`，校准质量以独立验证数据库上的 Brier 分数检验。候选集覆盖概率和单候选正确概率分别拟合，不能把 `max(candidate_probability)` 当作前者。
