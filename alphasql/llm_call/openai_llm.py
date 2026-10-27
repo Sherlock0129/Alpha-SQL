@@ -21,7 +21,8 @@ def reset_request_counter():
 
 def call_openai(prompt, model, temperature=0.0, top_p=1.0, n=1,
                 max_tokens=512, stop=None, base_url=None, api_key=None,
-                n_strategy='multiple', cost_recorder=DEFAULT_COST_RECORDER):
+                n_strategy='multiple', cost_recorder=DEFAULT_COST_RECORDER,
+                extra_body=None):
     global _requests
     configure_environment()
     if n < 1:
@@ -38,10 +39,12 @@ def call_openai(prompt, model, temperature=0.0, top_p=1.0, n=1,
                 raise RuntimeError('LLM request budget exhausted in this process')
             _requests += 1
             started = time.monotonic()
-            response = client.chat.completions.create(
-                model=model, messages=[{'role': 'user', 'content': prompt}],
-                temperature=temperature, top_p=top_p, n=1,
-                max_tokens=max_tokens, stop=stop, stream=False)
+            request = {'model': model, 'messages': [{'role': 'user', 'content': prompt}],
+                       'temperature': temperature, 'top_p': top_p, 'n': 1,
+                       'max_tokens': max_tokens, 'stop': stop, 'stream': False}
+            if extra_body is not None:
+                request['extra_body'] = extra_body
+            response = client.chat.completions.create(**request)
             usage = response.usage
             if usage and cost_recorder is not None:
                 cost_recorder.update_cost(usage.prompt_tokens, usage.completion_tokens)

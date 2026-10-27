@@ -93,7 +93,8 @@ class DirectLLMGenerator:
                  samples: int = 3, temperature: float = 0.8,
                  prompt_routes: Sequence[str] = ("skeleton", "query_plan"),
                  path_samples: int = 1, base_url: str | None = None,
-                 api_key_env: str | None = None) -> None:
+                 api_key_env: str | None = None,
+                 extra_body: Mapping[str, Any] | None = None) -> None:
         from alphasql.runner.prompt_paths import PROMPT_ROUTES
         if samples < 1 or path_samples < 1:
             raise ValueError("Sample counts must be positive")
@@ -105,6 +106,7 @@ class DirectLLMGenerator:
         self.samples, self.temperature = samples, temperature
         self.prompt_routes, self.path_samples = tuple(prompt_routes), path_samples
         self.base_url, self.api_key_env = base_url, api_key_env
+        self.extra_body = dict(extra_body) if extra_body else None
         self.supports_feedback = True
 
     def generate(self, task: Task, round_index: int,
@@ -126,6 +128,8 @@ class DirectLLMGenerator:
             if not key:
                 raise ValueError(f"{self.api_key_env} is required for {self.base_url}; no LLM call was made")
             kwargs.update(api_key=key, base_url=self.base_url)
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
         if feedback:
             (round_dir / "feedback.json").write_text(
                 json.dumps(feedback.to_dict(), ensure_ascii=False, indent=2) + "\n",
@@ -283,13 +287,15 @@ def _generator_provenance(generator: CandidateGenerator,
                       prompt_routes=list(generator.prompt_routes),
                       path_samples=generator.path_samples,
                       base_url=generator.base_url,
-                      api_key_env=generator.api_key_env)
+                      api_key_env=generator.api_key_env,
+                      extra_body=generator.extra_body)
     elif isinstance(generator, FrozenPoolGenerator):
         config.update(candidate_dir=str(generator.candidate_dir.resolve()),
                       per_round=generator.per_round)
     source_paths = [Path(__file__), Path(__file__).with_name("prompt_paths.py"),
                     Path(__file__).with_name("direct_candidate_runner.py"),
                     Path(__file__).parents[1] / "algorithm" / "mcts" / "mcts_action.py",
+                    Path(__file__).parents[1] / "llm_call" / "openai_llm.py",
                     Path(__file__).parents[1] / "llm_call" / "prompt_factory.py"]
     source_paths.extend(sorted((Path(__file__).parents[1] / "templates").glob("*.txt")))
     digest = hashlib.sha256()
@@ -523,16 +529,18 @@ def _run(args: argparse.Namespace) -> None:
             model = args.model or "Qwen3.8-27B"
             base_url = "https://aigc-api.hkust-gz.edu.cn/api/v2"
             api_key_env = "AIGC_API_KEY"
+            extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
             if not os.environ.get(api_key_env):
                 raise ValueError(f"{api_key_env} is required for {base_url}; no task was started")
         else:
             model = args.model or "qwen3-coder-flash"
             base_url = api_key_env = None
+            extra_body = None
         generator = DirectLLMGenerator(args.database_root_dir, output / "generated",
                                        model, args.samples, args.temperature,
                                        getattr(args, "prompt_paths", ("skeleton", "query_plan")),
                                        getattr(args, "prompt_path_samples", 1),
-                                       base_url, api_key_env)
+                                       base_url, api_key_env, extra_body)
     judge = JevPoolJudge(JevClient(settings), args.max_candidates)
     calibrator = DualCalibrator.load(args.calibrator) if args.calibrator else None
     pipeline = AdaptiveSQLSelector(generator, judge,

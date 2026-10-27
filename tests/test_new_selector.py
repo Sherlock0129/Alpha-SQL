@@ -253,7 +253,8 @@ class NewSelectorTest(unittest.TestCase):
         generator = DirectLLMGenerator(str(self.root), self.root / "hkust_generated",
                                        "Qwen3.8-27B", 1, prompt_routes=("skeleton",),
                                        base_url="https://aigc-api.hkust-gz.edu.cn/api/v2",
-                                       api_key_env="AIGC_API_KEY")
+                                       api_key_env="AIGC_API_KEY",
+                                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
         calls = []
 
         def fake_llm(prompt, **kwargs):
@@ -268,6 +269,8 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(candidates[0].sql, "SELECT name FROM items")
         self.assertEqual(calls[0]["api_key"], "school-secret")
         self.assertEqual(calls[0]["base_url"], "https://aigc-api.hkust-gz.edu.cn/api/v2")
+        self.assertEqual(calls[0]["extra_body"],
+                         {"chat_template_kwargs": {"enable_thinking": False}})
         self.assertNotIn("school-secret", json.dumps(_generator_provenance(generator)))
 
     def test_offline_labels_use_execution_multiset_and_do_not_store_sql(self):

@@ -32,19 +32,19 @@ JEV 同时回答两类正确性问题和四类诊断问题
 
 默认每条新增提示路径生成 1 个候选；原 D&C 路径仍由 `--samples` 控制。可用 `--prompt-paths skeleton query_plan --prompt-path-samples 1` 调整，或在 `--prompt-paths` 后直接接下一个选项以关闭新增路径，做同一生成器的消融。新增路径产生的 SQL 由选择器统一执行校验；一次提示路径失败不会丢弃其他路径的候选。
 
-港科广 AIGC V2 可通过 `--llm-provider hkustgz` 选择。SQL LLM 请求显式传入 `https://aigc-api.hkust-gz.edu.cn/api/v2` 和 `AIGC_API_KEY`，因此即使项目的旧 `DASHSCOPE_*` 配置仍在，也不会把本次 SQL 生成发往阿里云。TypeSafe JEV 独立使用 `TYPESAFE_API_KEY`。当前港科广官方模型列表给出的默认模型是 `Qwen3.8-27B`；可用 `--model` 指定其他实际可用的模型。密钥仅从环境变量读取，不进入结果或生成器版本哈希。
+港科广 AIGC V2 可通过 `--llm-provider hkustgz` 选择。SQL LLM 请求显式传入 `https://aigc-api.hkust-gz.edu.cn/api/v2` 和 `AIGC_API_KEY`，因此即使项目的旧 `DASHSCOPE_*` 配置仍在，也不会把本次 SQL 生成发往阿里云。TypeSafe JEV 独立使用 `TYPESAFE_API_KEY`。当前港科广官方模型列表给出的默认模型是 `Qwen3.8-27B`；可用 `--model` 指定其他实际可用的模型。港科广路径显式使用 `chat_template_kwargs.enable_thinking=false`，避免思考文本耗尽 SQL 输出预算；该参数记入生成器配置。密钥仅从环境变量读取，不进入结果或生成器版本哈希。
 
 ```powershell
 # 在 .env.local 或当前进程环境中设置 AIGC_API_KEY 与 TYPESAFE_API_KEY。
 # 若本机系统代理会拦截学校域名，在已连接校园网/学校 VPN 时直连该域名。
 $env:NO_PROXY = "aigc-api.hkust-gz.edu.cn"
-$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300/llm_usage.jsonl"
+$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300_nothink/llm_usage.jsonl"
 & .\.venv\Scripts\python.exe -m alphasql.runner.new_selector run `
   --tasks-file-path data/preprocessed/schema_pool_300/train/tasks.pkl `
   --database-root-dir data/bird/train/train_databases `
-  --output-dir results/new_selector/hkust_qwen38_300 `
+  --output-dir results/new_selector/hkust_qwen38_300_nothink `
   --generator direct --llm-provider hkustgz --model Qwen3.8-27B `
-  --generator-version hkustgz-qwen38-selector-v1 `
+  --generator-version hkustgz-qwen38-selector-v2-nothink `
   --samples 2 --prompt-path-samples 1 --max-rounds 2 --max-candidates 16 `
   --limit 5
 ```

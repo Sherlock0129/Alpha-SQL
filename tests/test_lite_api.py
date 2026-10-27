@@ -30,6 +30,18 @@ class LiteTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, 'budget'):
                 module.call_openai('test', model='qwen3.5-35B-a3b')
 
+    def test_provider_extra_body_reaches_openai_request(self):
+        import alphasql.llm_call.openai_llm as module
+        response = NS(usage=None,
+            choices=[NS(message=NS(content='<sql>SELECT 1</sql>'), finish_reason='stop')])
+        client = MagicMock()
+        client.__enter__.return_value = client
+        client.chat.completions.create.return_value = response
+        extra = {'chat_template_kwargs': {'enable_thinking': False}}
+        with patch.object(module, 'OpenAI', return_value=client), patch.object(module, '_requests', 0):
+            module.call_openai('test', model='Qwen3.8-27B', extra_body=extra)
+        self.assertEqual(client.chat.completions.create.call_args.kwargs['extra_body'], extra)
+
     def test_embedding_batch_order(self):
         from alphasql.llm_call.embedding_utils import EmbeddingModel
         model = EmbeddingModel.__new__(EmbeddingModel)
