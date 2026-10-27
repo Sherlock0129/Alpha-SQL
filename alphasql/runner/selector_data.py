@@ -75,19 +75,33 @@ def _calibration_row(row: Mapping[str, Any]) -> dict[str, Any]:
 def _label(args: argparse.Namespace) -> None:
     dataset = _dataset(args.data_path)
     rows = []
+    skipped = []
+    if getattr(args, "skip_invalid_gold", False) and not getattr(args, "skipped_output", None):
+        raise ValueError("--skip-invalid-gold requires --skipped-output")
     for key, result in _raw_results(args.results_dir).items():
         gold = dataset[key]
         if gold["db_id"] != result["db_id"]:
             raise ValueError(f"Database mismatch for {key}")
         db_id = result["db_id"]
         db_path = Path(args.database_root_dir) / db_id / f"{db_id}.sqlite"
-        rows.append(label_trace(result, _gold_sql(gold), str(db_path),
-                                args.execution_timeout, args.near_miss_max_edits))
+        try:
+            rows.append(label_trace(result, _gold_sql(gold), str(db_path),
+                                    args.execution_timeout, args.near_miss_max_edits))
+        except ValueError as exc:
+            if not (getattr(args, "skip_invalid_gold", False)
+                    and str(exc).startswith("Gold SQL did not execute for question ")):
+                raise
+            from alphasql.algorithm.compiler.validation import validate_sql
+            check = validate_sql(str(db_path), _gold_sql(gold), args.execution_timeout)
+            skipped.append({"question_id": key, "db_id": db_id,
+                            "gold_execution": check.summary()})
     _write_jsonl(args.output_path, rows)
     if args.calibration_output:
         _write_jsonl(args.calibration_output, [_calibration_row(row) for row in rows])
+    if getattr(args, "skipped_output", None):
+        _write_jsonl(args.skipped_output, skipped)
     print({"questions": len(rows), "strata": stratum_counts(rows),
-           "output": args.output_path})
+           "skipped_invalid_gold": len(skipped), "output": args.output_path})
 
 
 def _split(args: argparse.Namespace) -> None:
@@ -240,6 +254,10 @@ def main() -> None:
     label.add_argument("--calibration-output")
     label.add_argument("--execution-timeout", type=int, default=60)
     label.add_argument("--near-miss-max-edits", type=int, default=4)
+    label.add_argument("--skip-invalid-gold", action="store_true",
+                       help="Exclude reference SQL that fails on its dataset SQLite file")
+    label.add_argument("--skipped-output",
+                       help="Required with --skip-invalid-gold; write affected IDs and errors")
     label.set_defaults(func=_label)
     split = sub.add_parser("split")
     split.add_argument("--labels", required=True)

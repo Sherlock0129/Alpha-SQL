@@ -198,6 +198,29 @@ class SelectorTrainingDataTest(unittest.TestCase):
                          output_path=str(audit), per_group=1, seed=42))
         self.assertIn("gold_sql", audit.read_text(encoding="utf-8"))
 
+    def test_invalid_reference_sql_is_reported_without_labelling_the_trace(self):
+        results = self.root / "results"
+        results.mkdir()
+        (results / "1.json").write_text(json.dumps(self.raw), encoding="utf-8")
+        data = self.root / "gold.json"
+        data.write_text(json.dumps([{"question_id": 1, "db_id": "demo",
+                                     "SQL": "SELECT missing FROM items"}]), encoding="utf-8")
+        rich = self.root / "rich.jsonl"
+        skipped = self.root / "skipped.jsonl"
+        args = Namespace(results_dir=str(results), data_path=str(data),
+                         database_root_dir=str(self.root), output_path=str(rich),
+                         calibration_output=None, execution_timeout=10,
+                         near_miss_max_edits=10, skip_invalid_gold=False,
+                         skipped_output=str(skipped))
+        with self.assertRaisesRegex(ValueError, "Gold SQL did not execute"):
+            _label(args)
+        args.skip_invalid_gold = True
+        _label(args)
+        self.assertEqual(rich.read_text(encoding="utf-8"), "")
+        rejected = json.loads(skipped.read_text(encoding="utf-8"))
+        self.assertEqual(rejected["question_id"], "1")
+        self.assertIn("no such column", rejected["gold_execution"]["error"])
+
     def test_ordered_gold_does_not_accept_reversed_result_order(self):
         raw = self._raw_trace()
         first = raw["rounds"][0]

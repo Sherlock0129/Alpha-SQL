@@ -36,11 +36,12 @@ JEV 同时回答两类正确性问题和四类诊断问题
 
 ```powershell
 # 在 .env.local 或当前进程环境中设置 AIGC_API_KEY 与 TYPESAFE_API_KEY。
-$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_300_nothink_v3/llm_usage.jsonl"
+$env:JEV_MODEL = "jev-1.14.0"
+$env:ALPHASQL_USAGE_PATH = "results/new_selector/hkust_qwen38_jev114_smoke5/llm_usage.jsonl"
 & .\.venv\Scripts\python.exe -m alphasql.runner.new_selector run `
   --tasks-file-path data/preprocessed/schema_pool_300/train/tasks.pkl `
   --database-root-dir data/bird/train/train_databases `
-  --output-dir results/new_selector/hkust_qwen38_300_nothink_v3 `
+  --output-dir results/new_selector/hkust_qwen38_jev114_smoke5 `
   --generator direct --llm-provider hkustgz --model Qwen3.8-27B `
   --generator-version hkustgz-qwen38-selector-v3-direct `
   --samples 2 --prompt-path-samples 1 --max-rounds 2 --max-candidates 16 `
@@ -104,7 +105,7 @@ python -m alphasql.runner.new_selector run `
 ```powershell
 python -m alphasql.runner.new_selector label `
   --results-dir results/new_selector/train `
-  --data-path data/bird/schema_pool_300/train.json `
+  --data-path data/bird/train/train.json `
   --database-root-dir data/bird/train/train_databases `
   --output-path results/new_selector/train_labels.jsonl
 
@@ -118,7 +119,7 @@ python -m alphasql.runner.new_selector train `
   --output-dir results/new_selector/model
 ```
 
-训练对两种判断分别拟合 Logistic head。样本按训练题的原始 `coverage_raw` 从高到低排序：初期只见容易题，前 60% epoch 逐渐扩大到全体题；每题对损失贡献相同，避免候选多的题支配训练。验证集选择 Brier 分数最好的 epoch。报告同时保存原始/校准 Brier、候选覆盖率、原始/校准 Top-1 EX。`split_manifest.json` 保存输入哈希与验证数据库。训练时没有新增 SQL 候选，也没有用 gold SQL 作为推理特征。
+训练对两种判断分别拟合 Logistic head。覆盖头从正、负候选池交错取样，候选头先学习已覆盖且容易区分的池，再加入较难的池和未覆盖池；前 60% epoch 逐渐扩大到全体题。每题对损失贡献相同，避免候选多的题支配训练。验证集选择 Brier 分数最好的 epoch。报告同时保存原始/校准 Brier、候选覆盖率、原始/校准 Top-1 EX。`split_manifest.json` 保存输入哈希与验证数据库。训练时没有新增 SQL 候选，也没有用 gold SQL 作为推理特征。
 
 使用已训练校准器推理时给 `run` 增加：
 
@@ -140,7 +141,9 @@ python -m alphasql.runner.selector_data label `
   --data-path data/bird/train/train.json `
   --database-root-dir data/bird/train/train_databases `
   --output-path results/new_selector/data/rich.jsonl `
-  --calibration-output results/new_selector/data/calibration.jsonl
+  --calibration-output results/new_selector/data/calibration.jsonl `
+  --skip-invalid-gold `
+  --skipped-output results/new_selector/data/invalid_gold.jsonl
 
 python -m alphasql.runner.selector_data split `
   --labels results/new_selector/data/rich.jsonl `
@@ -149,6 +152,8 @@ python -m alphasql.runner.selector_data split `
 ```
 
 `rich.jsonl` 每题包含各轮池覆盖 EX 标签、每条候选的 EX 标签、可执行近似错误 SQL 的 AST 编辑距离标签、四类**弱**结构诊断多标签、已发生的单路径反馈收益、以及分开的 `generation_hard` / `selection_hard` / `covered_easy` 分层。近似错误 SQL 必须实际执行成功、结果不等于参考结果，且 AST 编辑距离不超过阈值。`split` 按数据库互斥地产生 train、validation、test，并为现有校准器另导出不含 SQL 文本的 `*_calibration.jsonl`。候选校准课程先看已覆盖池，按正确候选与错误候选的分数差从易到难；覆盖校准课程在早期同时看到正负池，避免全是覆盖正例。
+
+默认情况下，参考 SQL 无法在其 SQLite 数据库上执行会使标注停止。`--skip-invalid-gold` 只在同时指定 `--skipped-output` 时启用：原始 JEV 轨迹保留，无法确认正确性的题从训练标签排除，并把题目 ID 与执行错误写入单独清单。本批 300 题有 19 题属于这种情况。
 
 结构诊断不能作为人工真值。先抽样核查；此文件**包含参考 SQL**，只应留在离线标注环境，不能送入推理或动作探测：
 
@@ -167,7 +172,7 @@ python -m alphasql.runner.selector_data prepare-actions `
   --labels results/new_selector/data/split/train.jsonl `
   --results-dir results/new_selector/train `
   --output-path results/new_selector/data/action_states.jsonl `
-  --per-stratum 50 --max-new-candidates 4 --max-model-calls 3
+  --per-stratum 50 --max-new-candidates 4 --max-model-calls 5
 ```
 
 `probe-actions` 会调用配置的 SQL LLM 和 JEV 服务；仅在这些外部调用及其传输的问题、Schema、SQL 已获授权后运行。它分别从同一首轮状态执行 `relink`、`revise`、`diversify`、`adjudicate`。普通 LLM 请求设定每动作调用上限并记录实际 token；JEV 调用另计入上限。每个动作结果独立保存，失败可续跑。`max_tokens` 可用作事后上限校验；API 调用前无法保证实际输入 token 不超过该值。随后离线计算四个动作的候选覆盖增量、最终选择正确性增量和成本；只有四臂齐全且 token 用量完整的状态才有 `best_observed_action`。
