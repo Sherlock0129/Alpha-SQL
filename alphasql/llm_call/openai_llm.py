@@ -3,7 +3,7 @@ import json
 import os
 import time
 from pathlib import Path
-from openai import OpenAI
+from openai import DefaultHttpxClient, OpenAI
 from alphasql.llm_call.runtime import configure_environment
 from alphasql.llm_call.cost_recoder import CostRecorder
 
@@ -22,7 +22,7 @@ def reset_request_counter():
 def call_openai(prompt, model, temperature=0.0, top_p=1.0, n=1,
                 max_tokens=512, stop=None, base_url=None, api_key=None,
                 n_strategy='multiple', cost_recorder=DEFAULT_COST_RECORDER,
-                extra_body=None):
+                extra_body=None, direct_connection=False):
     global _requests
     configure_environment()
     if n < 1:
@@ -30,10 +30,15 @@ def call_openai(prompt, model, temperature=0.0, top_p=1.0, n=1,
     if n_strategy not in ('single', 'multiple'):
         raise ValueError('Unsupported sampling strategy')
     outputs = []
-    with OpenAI(api_key=api_key or os.getenv('OPENAI_API_KEY'),
-                base_url=base_url or os.getenv('OPENAI_BASE_URL'),
-                timeout=float(os.getenv('LLM_REQUEST_TIMEOUT', '60')),
-                max_retries=int(os.getenv('LLM_MAX_RETRIES', '1'))) as client:
+    client_options = {
+        'api_key': api_key or os.getenv('OPENAI_API_KEY'),
+        'base_url': base_url or os.getenv('OPENAI_BASE_URL'),
+        'timeout': float(os.getenv('LLM_REQUEST_TIMEOUT', '60')),
+        'max_retries': int(os.getenv('LLM_MAX_RETRIES', '1')),
+    }
+    if direct_connection:
+        client_options['http_client'] = DefaultHttpxClient(trust_env=False)
+    with OpenAI(**client_options) as client:
         for _ in range(n):
             if _requests >= int(os.getenv('LLM_MAX_REQUESTS', '120')):
                 raise RuntimeError('LLM request budget exhausted in this process')

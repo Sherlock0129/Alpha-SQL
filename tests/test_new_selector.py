@@ -255,7 +255,8 @@ class NewSelectorTest(unittest.TestCase):
                                        "Qwen3.8-27B", 1, prompt_routes=("skeleton",),
                                        base_url="https://aigc-api.hkust-gz.edu.cn/api/v2",
                                        api_key_env="AIGC_API_KEY",
-                                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                                       direct_connection=True)
         calls = []
 
         def fake_llm(prompt, **kwargs):
@@ -272,6 +273,7 @@ class NewSelectorTest(unittest.TestCase):
         self.assertEqual(calls[0]["base_url"], "https://aigc-api.hkust-gz.edu.cn/api/v2")
         self.assertEqual(calls[0]["extra_body"],
                          {"chat_template_kwargs": {"enable_thinking": False}})
+        self.assertTrue(calls[0]["direct_connection"])
         self.assertNotIn("school-secret", json.dumps(_generator_provenance(generator)))
 
     def test_initial_pool_collection_freezes_candidates_without_jev(self):

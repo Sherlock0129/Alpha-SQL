@@ -95,7 +95,8 @@ class DirectLLMGenerator:
                  prompt_routes: Sequence[str] = ("skeleton", "query_plan"),
                  path_samples: int = 1, base_url: str | None = None,
                  api_key_env: str | None = None,
-                 extra_body: Mapping[str, Any] | None = None) -> None:
+                 extra_body: Mapping[str, Any] | None = None,
+                 direct_connection: bool = False) -> None:
         from alphasql.runner.prompt_paths import PROMPT_ROUTES
         if samples < 1 or path_samples < 1:
             raise ValueError("Sample counts must be positive")
@@ -108,6 +109,7 @@ class DirectLLMGenerator:
         self.prompt_routes, self.path_samples = tuple(prompt_routes), path_samples
         self.base_url, self.api_key_env = base_url, api_key_env
         self.extra_body = dict(extra_body) if extra_body else None
+        self.direct_connection = direct_connection
         self.supports_feedback = True
 
     def generate(self, task: Task, round_index: int,
@@ -131,6 +133,8 @@ class DirectLLMGenerator:
             kwargs.update(api_key=key, base_url=self.base_url)
         if self.extra_body:
             kwargs["extra_body"] = self.extra_body
+        if self.direct_connection:
+            kwargs["direct_connection"] = True
         if feedback:
             (round_dir / "feedback.json").write_text(
                 json.dumps(feedback.to_dict(), ensure_ascii=False, indent=2) + "\n",
@@ -289,7 +293,8 @@ def _generator_provenance(generator: CandidateGenerator,
                       path_samples=generator.path_samples,
                       base_url=generator.base_url,
                       api_key_env=generator.api_key_env,
-                      extra_body=generator.extra_body)
+                      extra_body=generator.extra_body,
+                      direct_connection=generator.direct_connection)
     elif isinstance(generator, FrozenPoolGenerator):
         config.update(candidate_dir=str(generator.candidate_dir.resolve()),
                       per_round=generator.per_round)
@@ -531,16 +536,18 @@ def _direct_generator(args: argparse.Namespace, output: Path) -> DirectLLMGenera
         base_url = "https://aigc-api.hkust-gz.edu.cn/api/v2"
         api_key_env = "AIGC_API_KEY"
         extra_body = {"chat_template_kwargs": {"enable_thinking": False}}
+        direct_connection = True
         if not os.environ.get(api_key_env):
             raise ValueError(f"{api_key_env} is required for {base_url}; no task was started")
     else:
         model = args.model or "qwen3-coder-flash"
         base_url = api_key_env = extra_body = None
+        direct_connection = False
     return DirectLLMGenerator(args.database_root_dir, output / "generated",
                               model, args.samples, args.temperature,
                               getattr(args, "prompt_paths", ("skeleton", "query_plan")),
                               getattr(args, "prompt_path_samples", 1),
-                              base_url, api_key_env, extra_body)
+                              base_url, api_key_env, extra_body, direct_connection)
 
 
 def _collect_pool(args: argparse.Namespace) -> None:

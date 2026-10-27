@@ -38,9 +38,15 @@ class LiteTests(unittest.TestCase):
         client.__enter__.return_value = client
         client.chat.completions.create.return_value = response
         extra = {'chat_template_kwargs': {'enable_thinking': False}}
-        with patch.object(module, 'OpenAI', return_value=client), patch.object(module, '_requests', 0):
-            module.call_openai('test', model='Qwen3.8-27B', extra_body=extra)
+        direct_http = object()
+        with (patch.object(module, 'OpenAI', return_value=client) as openai_client,
+              patch.object(module, 'DefaultHttpxClient', return_value=direct_http) as direct,
+              patch.object(module, '_requests', 0)):
+            module.call_openai('test', model='Qwen3.8-27B', extra_body=extra,
+                               direct_connection=True)
         self.assertEqual(client.chat.completions.create.call_args.kwargs['extra_body'], extra)
+        direct.assert_called_once_with(trust_env=False)
+        self.assertIs(openai_client.call_args.kwargs['http_client'], direct_http)
 
     def test_embedding_batch_order(self):
         from alphasql.llm_call.embedding_utils import EmbeddingModel
