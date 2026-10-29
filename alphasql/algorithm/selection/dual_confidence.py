@@ -100,3 +100,42 @@ class JevPoolJudge:
              for name in ("schema", "projection", "filters", "logic")},
             response.model,
         )
+
+    def adjudicate(self, question: str, evidence: str, schema: Mapping[str, Any],
+                   candidates: Sequence[Mapping[str, Any]],
+                   scores: Sequence[float]) -> dict[str, Any]:
+        """Independent comparison of up to four valid SQLs; recommendation only.
+
+        This action does not establish correctness or silently change Top-1.
+        """
+        ranked = sorted((i for i, item in enumerate(candidates)
+                         if item["execution"]["valid"]),
+                        key=lambda i: (-scores[i], i))[:4]
+        if not ranked:
+            return {"recommended_index": None, "scores": {}, "usage": Usage(),
+                    "model": "", "called": False}
+        questions = {f"verify_{i}": NoulQuestion(
+            f"After independently checking the question, schema, SQL {i} and its "
+            "execution summary, is this SQL fully correct? Check all requested "
+            "conditions, joins, projection and multiplicity.") for i in ranked}
+        for position, i in enumerate(ranked):
+            for j in ranked[position + 1:]:
+                questions[f"prefer_{i}_{j}"] = NoulQuestion(
+                    f"Comparing SQL {i} and SQL {j}, is SQL {i} more likely to "
+                    "fully satisfy the question than SQL {j}?")
+        response = self.client.ask({
+            "task": "Adjudicate existing SQL candidates without generating SQL.",
+            "question": question, "evidence": evidence, "schema": dict(schema),
+            "candidates": [{"index": i, "sql": candidates[i]["sql"],
+                            "execution": candidates[i]["execution"]} for i in ranked],
+        }, questions)
+        totals = {i: response.require(f"verify_{i}", NoulResult).noul for i in ranked}
+        for position, i in enumerate(ranked):
+            for j in ranked[position + 1:]:
+                preference = response.require(f"prefer_{i}_{j}", NoulResult).noul
+                totals[i] += preference
+                totals[j] += 1 - preference
+        recommended = max(ranked, key=lambda i: (totals[i], -ranked.index(i)))
+        return {"recommended_index": recommended,
+                "scores": {str(i): totals[i] / len(ranked) for i in ranked},
+                "usage": response.usage, "model": response.model, "called": True}

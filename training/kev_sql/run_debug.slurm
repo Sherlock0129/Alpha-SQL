@@ -14,12 +14,17 @@ set -euo pipefail
 : "${KEV_PYTHON:?Set server-side Kev Python path}"
 : "${TRAIN_JSONL:?Set server-side training JSONL path}"
 : "${OUTPUT_DIR:?Set server-side output path}"
+: "${KEV_INIT_FROM:?Set local Kev checkpoint directory}"
 test -f "$KEV_REPO/kev/train.py"
 test -x "$KEV_PYTHON"
 test -f "$TRAIN_JSONL"
+test -f "$KEV_REPO/Qwen/Qwen3.5-4B-Base/config.json"
+test -f "$KEV_INIT_FROM/head.pt"
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 mkdir -p "$(dirname "$OUTPUT_DIR")"
 cd "$KEV_REPO"
 "$KEV_PYTHON" -m kev.train --data "$TRAIN_JSONL" \
-  --base Qwen/Qwen3.5-4B-Base --init_from jaredpalmer/kev-4b \
+  --base Qwen/Qwen3.5-4B-Base --init_from "$KEV_INIT_FROM" \
   --epochs 1 --lr 2e-5 --batch 1 --accum 2 \
   --dtype bf16 --checkpointing 1 --device cuda --out "$OUTPUT_DIR"

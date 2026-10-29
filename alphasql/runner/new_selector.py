@@ -23,6 +23,7 @@ import sqlglot
 
 from alphasql.algorithm.compiler.validation import validate_sql
 from alphasql.algorithm.selection.dual_calibration import DualCalibrator, fit_dual
+from alphasql.algorithm.selection.selective_stop import StopPolicy
 from alphasql.algorithm.selection.dual_confidence import JevPoolJudge, PoolJudgement
 from alphasql.algorithm.selection.generation_feedback import GenerationFeedback, choose_feedback
 from alphasql.algorithm.selection.schema_signal import result_signature
@@ -116,6 +117,8 @@ class DirectLLMGenerator:
                  feedback: GenerationFeedback | None = None) -> Sequence[GeneratedSQL]:
         if not task.table_schema_dict:
             raise ValueError("Direct generation needs a preprocessed Task with table_schema_dict")
+        from alphasql.llm_call.openai_llm import reset_request_counter
+        reset_request_counter()
         from alphasql.algorithm.mcts.mcts_action import MCTSNodeType
         from alphasql.runner.direct_candidate_runner import (
             _root_node, deduplicate_paths, generate_one,
@@ -334,10 +337,13 @@ class SelectorSettings:
     coverage_stop: float = 0.8
     candidate_stop: float = 0.8
     execution_timeout: int = 60
+    max_jev_calls: int | None = None
 
     def __post_init__(self) -> None:
         if self.max_rounds < 1 or self.max_candidates < 1 or self.execution_timeout < 1:
             raise ValueError("Round, candidate and timeout limits must be positive")
+        if self.max_jev_calls is not None and self.max_jev_calls < 1:
+            raise ValueError("JEV call limit must be positive")
         if not 0 <= self.coverage_stop <= 1 or not 0 <= self.candidate_stop <= 1:
             raise ValueError("Stop thresholds must be probabilities")
 
@@ -346,12 +352,29 @@ class AdaptiveSQLSelector:
     def __init__(self, generator: CandidateGenerator, judge: JevPoolJudge,
                  settings: SelectorSettings | None = None,
                  calibrator: DualCalibrator | None = None,
-                 generator_version: str | None = None) -> None:
+                 generator_version: str | None = None,
+                 stop_policy: StopPolicy | None = None,
+                 content_verifier: Any | None = None,
+                 verifier_sha256: str | None = None) -> None:
         self.generator, self.judge = generator, judge
         self.settings = settings or SelectorSettings()
         self.calibrator = calibrator
+        self.stop_policy = stop_policy
+        self.content_verifier = content_verifier
+        if stop_policy and stop_policy.score_key == "verifier_probability":
+            if content_verifier is None or stop_policy.model_sha256 != verifier_sha256:
+                raise ValueError("Verifier stop policy requires its exact frozen model")
+        if stop_policy and stop_policy.score_key == "candidate_probability" and calibrator is None:
+            raise ValueError("Calibrated stop policy requires its candidate calibrator")
         self.generator_provenance = _generator_provenance(generator, generator_version)
         self.judge_provenance = _judge_provenance(judge)
+        if stop_policy and stop_policy.generator_version and (
+                self.generator_provenance.get("version") != stop_policy.generator_version):
+            raise ValueError("Stop policy generator version differs from the current generator")
+        if stop_policy and stop_policy.judge_model and (
+                self.judge_provenance.get("model") not in
+                {stop_policy.judge_model, "jev-latest"}):
+            raise ValueError("Stop policy judge model differs from the current JEV model")
         self.calibrator_provenance = ({"kind": "dual_logistic",
             "sha256": hashlib.sha256(json.dumps(calibrator.to_dict(),
                                               sort_keys=True).encode("utf-8")).hexdigest(),
@@ -371,6 +394,8 @@ class AdaptiveSQLSelector:
         last: PoolJudgement | None = None
         feedback: GenerationFeedback | None = None
         usage_total = {"input_tokens": 0, "output_tokens": 0}
+        jev_calls_used = 0
+        accepted_stop = False
         generation_task = task.model_copy(update={"sql": None})
         for round_index in range(self.settings.max_rounds):
             applied_feedback = (feedback if getattr(self.generator, "supports_feedback", True)
@@ -398,6 +423,11 @@ class AdaptiveSQLSelector:
                 new_count += 1
             if candidates:
                 last = self.judge.assess(task.question, task.evidence, schema, candidates)
+                if any(item["execution"]["valid"] for item in candidates):
+                    jev_calls_used += 1
+                if (self.stop_policy and self.stop_policy.judge_model and last.model
+                        and last.model != self.stop_policy.judge_model):
+                    raise ValueError("Actual JEV response model differs from the stop policy")
                 usage_total["input_tokens"] += last.usage.input_tokens
                 usage_total["output_tokens"] += last.usage.output_tokens
                 has_valid = any(item["execution"]["valid"] for item in candidates)
@@ -411,12 +441,27 @@ class AdaptiveSQLSelector:
             else:
                 coverage, candidate_probs = 0.0, []
             best = max(candidate_probs, default=0.0)
+            if self.content_verifier:
+                from alphasql.algorithm.selection.content_verifier import content_features
+                valid_indices = [i for i, item in enumerate(candidates)
+                                 if item["execution"]["valid"]]
+                verifier_probs = [0.0] * len(candidates)
+                features = [{"features": content_features(
+                    task.question, task.evidence, schema,
+                    candidates[i]["sql"], candidates[i]["execution"])} for i in valid_indices]
+                for i, score in zip(valid_indices, self.content_verifier.predict(features)):
+                    verifier_probs[i] = float(score)
+            else:
+                verifier_probs = []
             snapshot = [dict(copy.deepcopy(item), candidate_raw=last.candidate_raw[i],
-                             candidate_probability=candidate_probs[i])
+                             candidate_probability=candidate_probs[i],
+                             **({"verifier_probability": verifier_probs[i]}
+                                if verifier_probs else {}))
                         for i, item in enumerate(candidates)] if last else []
             round_record = {"round": round_index, "new_candidates": new_count,
                             "pool_size": len(candidates), "coverage": coverage,
                             "best_candidate_probability": best,
+                            "best_verifier_probability": max(verifier_probs, default=None),
                             "question": task.question, "evidence": task.evidence,
                             "schema_hypotheses": [
                                 {"candidate_index": i,
@@ -446,16 +491,54 @@ class AdaptiveSQLSelector:
                             "feedback_applied": applied_feedback is not None,
                             "diagnostics": dict(last.diagnostics) if last else {}}
             rounds.append(round_record)
-            if (coverage >= self.settings.coverage_stop
-                    and best >= self.settings.candidate_stop):
+            if self.stop_policy:
+                raw_best = max((last.candidate_raw[i] for i, item in enumerate(candidates)
+                                if item["execution"]["valid"]), default=0.0) if last else 0.0
+                stop_score = (raw_best if self.stop_policy.score_key == "candidate_raw"
+                              else max(verifier_probs, default=0.0)
+                              if self.stop_policy.score_key == "verifier_probability" else best)
+                pool_score = last.coverage_raw if last else 0.0
+                round_record["stop_score"] = stop_score
+                if self.stop_policy.accepts(stop_score, pool_score):
+                    round_record["decision_action"] = "stop"
+                    accepted_stop = True
+                    break
+                if (self.stop_policy.pool_review_below is not None
+                        and pool_score < self.stop_policy.pool_review_below
+                        and any(item["execution"]["valid"] for item in candidates)):
+                    if jev_calls_used >= (self.settings.max_jev_calls or self.settings.max_rounds):
+                        round_record["decision_action"] = "budget_exhausted"
+                        break
+                    if not hasattr(self.judge, "adjudicate"):
+                        raise ValueError("Stop policy requires a judge with adjudicate support")
+                    review = self.judge.adjudicate(task.question, task.evidence, schema,
+                                                   candidates, verifier_probs or candidate_probs)
+                    review_usage = review.pop("usage")
+                    usage_total["input_tokens"] += review_usage.input_tokens
+                    usage_total["output_tokens"] += review_usage.output_tokens
+                    jev_calls_used += int(review.get("called", False))
+                    round_record["adjudication"] = review
+                    round_record["decision_action"] = "adjudicate"
+                    break
+                if jev_calls_used >= (self.settings.max_jev_calls or self.settings.max_rounds):
+                    round_record["decision_action"] = "budget_exhausted"
+                    break
+                round_record["decision_action"] = "continue"
+            elif (coverage >= self.settings.coverage_stop
+                  and best >= self.settings.candidate_stop):
+                round_record["decision_action"] = "stop_legacy"
+                accepted_stop = True
                 break
             if len(candidates) >= self.settings.max_candidates:
+                round_record["decision_action"] = "budget_exhausted"
                 break
             if round_index + 1 < self.settings.max_rounds:
                 feedback = (choose_feedback(last, candidates,
                                             candidate_scores=candidate_probs)
                             if last else GenerationFeedback("diversify", "uncertain", None))
                 round_record["feedback_next"] = feedback.to_dict()
+            else:
+                round_record["decision_action"] = "budget_exhausted"
         if last is None:
             last = PoolJudgement(0.0, (), Usage())
         valid = [i for i, item in enumerate(candidates) if item["execution"]["valid"]]
@@ -465,7 +548,12 @@ class AdaptiveSQLSelector:
             item["candidate_probability"] = (
                 self.calibrator.candidate.predict(raw) if self.calibrator and i in valid
                 else raw if i in valid else 0.0)
-        selected = max(valid, key=lambda i: (candidates[i]["candidate_probability"], -i)) if valid else None
+            if self.content_verifier:
+                item["verifier_probability"] = rounds[-1]["candidates"][i]["verifier_probability"]
+        selection_key = ("verifier_probability" if self.stop_policy and
+                         self.stop_policy.score_key == "verifier_probability" else
+                         "candidate_probability")
+        selected = max(valid, key=lambda i: (candidates[i][selection_key], -i)) if valid else None
         return {
             "schema_version": 2, "question_id": task.question_id, "db_id": task.db_id,
             "question": task.question, "evidence": task.evidence,
@@ -476,16 +564,22 @@ class AdaptiveSQLSelector:
             "generator": self.generator_provenance,
             "judge": self.judge_provenance,
             "calibrator": self.calibrator_provenance,
+            "stop_policy": self.stop_policy.__dict__ if self.stop_policy else None,
             "selected_index": selected,
             "selected_sql": candidates[selected]["sql"] if selected is not None else None,
+            "selection_score_key": selection_key,
+            "accepted_stop": accepted_stop,
+            "decision_action": rounds[-1].get("decision_action"),
             "coverage_raw": last.coverage_raw,
             "coverage_probability": (self.calibrator.coverage.predict(last.coverage_raw)
                                      if self.calibrator and valid else last.coverage_raw),
             "confidence_kind": "calibrated" if self.calibrator else "raw_jev_judgement",
-            "uncertain": (selected is None or rounds[-1]["coverage"] < self.settings.coverage_stop
-                          or rounds[-1]["best_candidate_probability"] < self.settings.candidate_stop),
+            "uncertain": ((selected is None or not accepted_stop) if self.stop_policy else
+                          (selected is None or rounds[-1]["coverage"] < self.settings.coverage_stop
+                           or rounds[-1]["best_candidate_probability"] < self.settings.candidate_stop)),
             "candidates": candidates, "rounds": rounds,
             "jev_usage_total": usage_total,
+            "jev_calls_total": jev_calls_used,
         }
 
 
@@ -637,10 +731,19 @@ def _run(args: argparse.Namespace) -> None:
         generator = _direct_generator(args, output)
     judge = JevPoolJudge(JevClient(settings), args.max_candidates)
     calibrator = DualCalibrator.load(args.calibrator) if args.calibrator else None
+    stop_policy = StopPolicy.load(args.stop_policy) if getattr(args, "stop_policy", None) else None
+    verifier = None
+    verifier_sha256 = None
+    if getattr(args, "verifier_model", None):
+        from alphasql.algorithm.selection.content_verifier import ContentVerifier
+        verifier = ContentVerifier.load(args.verifier_model)
+        verifier_sha256 = hashlib.sha256(Path(args.verifier_model).read_bytes()).hexdigest()
     pipeline = AdaptiveSQLSelector(generator, judge,
         SelectorSettings(args.max_rounds, args.max_candidates,
-                         args.coverage_stop, args.candidate_stop, args.execution_timeout),
-        calibrator, getattr(args, "generator_version", None))
+                         args.coverage_stop, args.candidate_stop, args.execution_timeout,
+                         getattr(args, "max_jev_calls", None)),
+        calibrator, getattr(args, "generator_version", None), stop_policy,
+        verifier, verifier_sha256)
     failures = []
     for task in tasks:
         path = output / f"{task.question_id}.json"
@@ -742,10 +845,14 @@ def main() -> None:
     run.add_argument("--per-round", type=int, default=8)
     run.add_argument("--max-rounds", type=int, default=3)
     run.add_argument("--max-candidates", type=int, default=32)
+    run.add_argument("--max-jev-calls", type=int,
+                     help="Maximum JEV requests per question, including adjudication")
     run.add_argument("--coverage-stop", type=float, default=0.8)
     run.add_argument("--candidate-stop", type=float, default=0.8)
     run.add_argument("--execution-timeout", type=int, default=60)
     run.add_argument("--calibrator")
+    run.add_argument("--stop-policy", help="Validation-fitted selective stopping policy")
+    run.add_argument("--verifier-model", help="Frozen content verifier JSON model")
     run.add_argument("--question-id")
     run.add_argument("--limit", type=int)
     run.add_argument("--overwrite", action="store_true")
